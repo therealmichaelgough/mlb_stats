@@ -1,0 +1,321 @@
+<!-- TODO:
+make the first tab active
+fix x-axis size (letters are overlapping)
+fix wOBA chart scaling (parameterize chart options using jinja?)
+-->
+
+{% block body %}
+<html xmlns="http://www.w3.org/1999/html">
+<head>
+    <title>MLB Moving Averages</title>
+    <style>
+        /* Style the tab */
+        .tab {
+            overflow: hidden;
+            border: 1px solid #ccc;
+            background-color: #f1f1f1;
+        }
+
+        /* Style the buttons that are used to open the tab content */
+        .tab button {
+            background-color: inherit;
+            float: left;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            padding: 14px 16px;
+            transition: 0.3s;
+        }
+
+        /* Change background color of buttons on hover */
+        .tab button:hover {
+            background-color: #ddd;
+        }
+
+        /* Create an active/current tablink class */
+        .tab button.active {
+            background-color: #ccc;
+        }
+
+        /* Style the tab content */
+        .tabcontent {
+            display: none;
+            padding: 1px 1px;
+            border: 1px solid #ccc;
+            border-top: none;
+            overflow: visible;
+        }
+
+        body{
+            background-color: white;
+            font-family: Gill Sans, Verdana;
+            font-size: 11px;
+            line-height: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+
+        .header{
+            font-size: 20px;
+            font-weight: bold;
+            text-align: right;
+        }
+
+        .team_name{
+            text-align: left;
+            white-space: nowrap;
+            padding-right: 0;
+            font-size: 30;
+        }
+        .columns{
+            table-layout: fixed;
+            border-collapse: separate;
+            min-width: 290;
+        }
+        .chart{
+            width: max-content;
+            padding-right: 100;
+        }
+        .YTD{
+            width: fit-content;
+            text-align: right;
+
+        }
+
+
+    </style>
+
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+
+    <script type="text/javascript">
+
+        //var openedTabs;
+
+        function openDefaultTab(){
+            document.getElementById("defaultOpen").click();
+        }
+
+        function openTab(evt, tabName) {
+            var i, tabcontent, tablinks;
+            tabcontent = document.getElementsByClassName("tabcontent");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+            tablinks = document.getElementsByClassName("tablinks");
+            for (i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
+
+            {% for team in teams %}
+            //team_name, team_data, chart_options, stat_name, tabName
+            draw_stat_chart("{{team.team_name}}", {{team.stat_data}}, "{{team.stat_name}}", tabName);
+
+            {% endfor %}
+        }
+
+        // Load Charts and the corechart package.
+        google.charts.load('current', {'packages':['corechart']});
+
+        var wRC_options = {'title':'Weighted Runs Created +',
+            tooltip: {isHtml: true},
+            'titleTextStyle': {color: 'black'},
+            'hAxis': {
+                title: '{{start_date}} to {{end_date}}',
+                gridlines: {
+                    color: '#2e2e1f'
+                },
+                textColor: 'black',
+                baselineColor: '#2e2e1f',
+                //slantedText: true
+            },
+            'vAxis':{textColor: 'black',
+                gridlines: {
+                    color: '#2e2e1f'
+                },
+                ticks: [-25, 0, 25, 50, 75, 100, 125, 150, 175, 200, 225, 250, 275, 300, 325, 350]
+            },
+            'width':1200,
+            'legend': 'bottom',
+            'height':600,
+            'chartArea': {'width': '75%', 'height':'65%', 'backgroundColor':'black'},
+            'backgroundColor': 'transparent',
+            'colors': ['orange', 'blue', 'gray', 'red', 'green', '#c3cbd8']};
+
+        var wOBA_options = {'title':'Weighted On-Base Average',
+            tooltip: {isHtml: true},
+            'titleTextStyle': {color: 'black'},
+            'hAxis': {
+                title: '{{start_date}} to {{end_date}}',
+                gridlines: {
+                    color: '#2e2e1f'
+                },
+                textColor: 'black',
+                baselineColor: '#2e2e1f',
+                //slantedText: true
+            },
+            'vAxis':{
+                textColor: 'black',
+                gridlines: {
+                    color: '#2e2e1f'
+
+                },
+                ticks: [.1, .15, .20, .25, .3, .35, .4, .45, .5, .55, .6]
+                },
+            'width':1200,
+            'legend': 'bottom',
+            'height':600,
+            'chartArea': {'width': '75%', 'height':'65%', 'backgroundColor':'black'},
+            'backgroundColor': 'transparent',
+            'colors': ['orange', 'blue', 'gray', 'red', 'green', '#c3cbd8']};
+
+        var chart_options =  {"wRC": wRC_options, "wOBA": wOBA_options};
+
+        function draw_stat_chart(team_name, team_data, stat_name, tabName) {
+            if (stat_name == tabName) {
+                google.charts.setOnLoadCallback(function () {
+                    draw_chart(stat_name, team_name, team_data);
+                });}}
+
+
+        function draw_chart(stat_name, team_name, team_data) {
+            var data_table = new google.visualization.DataTable(team_data);
+            //data_table.addColumn({'type': 'string', 'role':'tooltip'});
+            //for (let i; i<data_table.)
+            var chart = new google.visualization.LineChart(document.getElementById(stat_name + '_chart_' + team_name));
+            chart.draw(data_table, chart_options[stat_name]);
+
+            var columns = [];
+            var series = {};
+            for (var i = 0; i < data_table.getNumberOfColumns(); i++) {
+                columns.push(i);
+                if (i > 0) {
+                    series[i - 1] = {};
+                }
+            }
+
+            google.visualization.events.addListener(chart, 'select', function () {
+                var sel = chart.getSelection();
+                // if selection length is 0, we deselected an element
+                if (sel.length > 0) {
+                    // if row is undefined, we clicked on the legend
+                    if (sel[0].row === null) {
+                        var col = sel[0].column;
+                        if (columns[col] == col) {
+                            // hide the data series
+                            columns[col] = {
+                                label: data_table.getColumnLabel(col),
+                                type: data_table.getColumnType(col),
+                                calc: function () {
+                                    return null;
+                                }
+                            };
+
+                            // grey out the legend entry
+                            series[col - 1].color = '#CCCCCC';
+                        }
+                        else {
+                            // show the data series
+                            columns[col] = col;
+                            series[col - 1].color = null;
+                        }
+                        var view = new google.visualization.DataView(data_table);
+                        view.setColumns(columns);
+                        chart.draw(view, chart_options[stat_name]);
+                    }
+                }
+            });
+        }
+
+
+
+    </script>
+
+
+</head>
+<body onload="openDefaultTab()">
+
+<h1>MLB Moving Averages</h1>
+<h3>a custom web app by DataSleuth.agency</h3>
+<br>
+<p>
+    Graphs Available:
+</p>
+<!-- Tab links -->
+<div class="tab">
+    <button class="tablinks" id="defaultOpen" onclick="openTab(event, 'wRC')">wRC+</button>
+    <button class="tablinks" onclick="openTab(event, 'wOBA')">wOBA</button>
+</div>
+
+<!-- Tab content -->
+<div id="wRC" class="tabcontent">
+    <h1>Team wRC+ from {{start_date}} to {{end_date}} ({{interval_length_in_days}} days)</h1>
+    <p>
+    </p>
+    <form action="http://{{address}}/graph" method="get">
+        start date:<br>
+        <input type="date" name="start_date" value="{{start_date}}"><br>
+        end date:<br>
+        <input type="date" name="end_date" value="{{end_date}}">
+        <input type="submit" name="get_stats" value="Get moving averages">
+    </form>
+
+    <!--Table and divs that hold the pie charts-->
+    <table class="columns">
+        <tr class="header">
+            <td style="text-align: left;">Team</td>
+            <td>YTD</td>
+            <td style="text-align: center;">wRC+ MOVING AVERAGES</td>
+        </tr>
+
+        {% for team in teams %}
+        {% if team.stat_name == "wRC" %}
+        <tr>
+            <td class="team_name">{{team.team_name}}</td>
+            <td class="YTD">{{team.stat_ytd}}</td>
+            <td class="chart" id="wRC_chart_{{ team.team_name }}"></td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+    </table>
+</div>
+
+<div id="wOBA" class="tabcontent">
+    <h1>Team wOBA from {{start_date}} to {{end_date}} ({{interval_length_in_days}} days)</h1>
+    <p>
+    </p>
+    <form action="http://{{address}}/graph" method="get">
+        start date:<br>
+        <input type="date" name="start_date" value="{{start_date}}"><br>
+        end date:<br>
+        <input type="date" name="end_date" value="{{end_date}}">
+        <input type="submit" name="get_stats" value="Get moving averages">
+    </form>
+
+    <!--Table and divs that hold the pie charts-->
+    <table class="columns">
+        <tr class="header">
+            <td style="text-align: left;">TEAM</td>
+            <td>YTD</td>
+            <td style="text-align: center;">wOBA MOVING AVERAGES</td>
+        </tr>
+
+        {% for team in teams %}
+        {% if team.stat_name == "wOBA" %}
+        <tr>
+            <td class="team_name">{{team.team_name}}</td>
+            <td class="YTD">{{ team.stat_ytd }}</td>
+            <td class="chart" id="wOBA_chart_{{ team.team_name }}"></td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+    </table>
+</div>
+
+
+</body>
+</html>
+{% endblock %}

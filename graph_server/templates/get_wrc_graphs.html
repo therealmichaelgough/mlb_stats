@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+
+
+<head>
+    <meta charset="UTF-8">
+    <title>MLB Scraper</title>
+    <style>body{
+  background-color: white;
+  font-family: Gill Sans, Verdana;
+ font-size: 26px;
+ line-height: 26px;
+ text-transform: uppercase;
+ letter-spacing: 1px;
+ font-weight: bold;
+ white-space: nowrap;
+}</style>
+</head>
+<body>
+<p></p>
+<form action="http://{{address}}/graph" method="get">
+    start date:<br>
+    <input type="date" style="font-size:25px;" name="start_date" value="{{yesterday}}"><br>
+    end date:<br>
+    <input type="date" style="font-size:25px" name="end_date" value="{{today}}">
+    <input type="submit" name="get_stats" value="Get Moving Averages">
+</form>
+
+</body>
+</html>
