@@ -1,0 +1,10 @@
+waitress
+selenium
+falcon
+gviz_api
+jinja2
+sqlitedict
+fake_useragent
+pyvirtualdisplay
+wget
+mlbgame
