@@ -20,8 +20,8 @@ import mlbgame
 
 #PORT = 80
 
-ADDRESS = "app.datasleuth.agency/mlb_graphs"
-#ADDRESS = "localhost/mlb_graphs"
+#ADDRESS = "app.datasleuth.agency/mlb_graphs"
+ADDRESS = "localhost/mlb_graphs"
 INTERVALS = [1, 7, 15, 30, 60, 120]
 
 CHART_VAXIS = {
@@ -178,7 +178,7 @@ def retrieve_team_gameday(team_name, date):
     except (IndexError, AttributeError, KeyError):
         print "no games for {} on {}".format(long_team_name, date)
 
-    return {date: compiled_gameday_report}
+    return compiled_gameday_report
 
 
 """db schema:
@@ -193,13 +193,17 @@ def get_wl_string(date, team_name, db):
         if DEBUG_CLEAR_WL:
             raise KeyError
         gameday_report = db[team_name][GAME_OUTCOMES_KEY][date]
-        print "found stored w/l for {} for date {}".format(team_name, date)
+        #print "found stored w/l for {} for date {}".format(team_name, date)
     except KeyError:
         print "db miss for team {team_name} on date {date}".format(team_name=team_name, date=date)
         to_update = db[team_name]
-        # {date: game_report}
+        to_update.setdefault(GAME_OUTCOMES_KEY, {})
+        to_update[GAME_OUTCOMES_KEY].setdefault(date, retrieve_team_gameday(team_name, date))
 
-        to_update.update({GAME_OUTCOMES_KEY: retrieve_team_gameday(team_name, date)})
+        # {date: game_report}
+        #to_update = to_update[GAME_OUTCOMES_KEY]
+
+        #to_update.update(retrieve_team_gameday(team_name, date))
         db[team_name] = to_update
         db.commit()
         gameday_report = db[team_name][GAME_OUTCOMES_KEY][date]
@@ -260,6 +264,8 @@ def fetch_stat_by_team(start_date, end_date, team_name, stat_name):
         ytd = get_team_ytd_stat(start_date, daily_stat)
         index_by_date["ytd_{}".format(stat_name)] = ytd
 
+        cached_daily_wl = db[team_name].setdefault(GAME_OUTCOMES_KEY, {})
+
         for date in daily_stat:
             if date > end_date or date < start_date:
                 continue
@@ -269,7 +275,8 @@ def fetch_stat_by_team(start_date, end_date, team_name, stat_name):
                                        }
 
                 # {"opponent": "str", "team_score": int, "opponent_score": int, "outcome": "W"|"L"}}
-                daily_wl = get_wl_string(date, team_name, db)
+                daily_wl = cached_daily_wl.setdefault(date, get_wl_string(date, team_name, db))
+                #daily_wl = get_wl_string(date, team_name, db)
                 index_by_date[date][GAME_OUTCOMES_KEY] = daily_wl
                 add_moving_averages_to_date_object(index_by_date[date], daily_stat, stat_name)
 
