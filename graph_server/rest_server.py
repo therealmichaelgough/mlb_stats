@@ -21,8 +21,8 @@ import json
 
 #PORT = 80
 
-ADDRESS = "app.datasleuth.agency/mlb_graphs"
-#ADDRESS = "localhost/mlb_graphs"
+#ADDRESS = "app.datasleuth.agency/mlb_graphs"
+ADDRESS = "localhost/mlb_graphs"
 INTERVALS = [1, 7, 15, 30, 60, 120]
 
 WL_COLOR = {"W": "green", "L": "red"}

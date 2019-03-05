@@ -85,7 +85,7 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
         }
         .game_outome{
             text-align: left;
-            vertical-align: top;
+            /*vertical-align: top;*/
         }
 
 
@@ -146,7 +146,7 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
             'width':1200,
             'legend': 'bottom',
             'height':600,
-            'chartArea': {'width': '100%', 'height':'65%', 'backgroundColor':'black'},
+            'chartArea': {'width': '92%', 'height':'65%', 'backgroundColor':'black'},
             'backgroundColor': 'transparent',
             'colors': ['orange', 'blue', 'gray', 'red', 'green', 'yellow']};
 
@@ -173,7 +173,7 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
             'width':1200,
             'legend': 'bottom',
             'height':600,
-            'chartArea': {'width': '100%', 'height':'65%', 'backgroundColor':'black'},
+            'chartArea': {'width': '92%', 'height':'65%', 'backgroundColor':'black'},
             'backgroundColor': 'transparent',
             'colors': ['orange', 'blue', 'gray', 'red', 'green', 'yellow']};
 
@@ -220,12 +220,12 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
             //change some TEXT element ON POINT SELECTION?
 
 
-            google.visualization.events.addListener(chart, 'select', function () {
+            /*google.visualization.events.addListener(chart, 'select', function () {
                 var selectedItem = chart.getSelection()[0];
                 var value = data_table.getValue(selectedItem.row, 3);
-                document.getElementById('game_outcome_' + team_name).innerHTML = value;
+                document.getElementById('game_outcome_' + team_name + "_" + stat_name).innerHTML = value;
                 //alert('The user selected ' + value);
-                });
+                });*/
 
 
 
@@ -258,6 +258,11 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
                         var view = new google.visualization.DataView(data_table);
                         view.setColumns(columns);
                         chart.draw(view, chart_options[stat_name]);
+                    }
+                    else {
+                        var selectedItem = chart.getSelection()[0];
+                        var value = data_table.getValue(selectedItem.row, 3);
+                        document.getElementById('game_outcome_' + team_name + "_" + stat_name).innerHTML = value;
                     }
                 }
             });
@@ -311,7 +316,8 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
             <td class="team_name">{{team.team_name}}</td>
             <td class="YTD">{{team.stat_ytd}}</td>
             <td class="chart" id="wRC_chart_{{ team.team_name }}"></td>
-            <td class="game_outome" id="game_outcome_{{ team.team_name }}"></td>
+            <td class="game_outome" id="game_outcome_{{ team.team_name }}_wRC"></td>
+
         </tr>
         {% endif %}
         {% endfor %}
@@ -344,6 +350,7 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
             <td class="team_name">{{team.team_name}}</td>
             <td class="YTD">{{ team.stat_ytd }}</td>
             <td class="chart" id="wOBA_chart_{{ team.team_name }}"></td>
+            <td class="game_outome" id="game_outcome_{{ team.team_name }}_wOBA"></td>
         </tr>
         {% endif %}
         {% endfor %}
