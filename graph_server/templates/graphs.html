@@ -76,12 +76,16 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
         }
         .chart{
             width: max-content;
-            padding-right: 100;
+            /*padding-right: 100;*/
         }
         .YTD{
             width: fit-content;
             text-align: right;
 
+        }
+        .game_outome{
+            text-align: left;
+            vertical-align: top;
         }
 
 
@@ -111,6 +115,7 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
             evt.currentTarget.className += " active";
 
             {% for team in teams %}
+            ///see rest_server.convert_to_google_charts_json_data_table
             //team_name, team_data, chart_options, stat_name, tabName
             draw_stat_chart("{{team.team_name}}", {{team.stat_data}}, "{{team.stat_name}}", tabName);
 
@@ -141,7 +146,7 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
             'width':1200,
             'legend': 'bottom',
             'height':600,
-            'chartArea': {'width': '75%', 'height':'65%', 'backgroundColor':'black'},
+            'chartArea': {'width': '100%', 'height':'65%', 'backgroundColor':'black'},
             'backgroundColor': 'transparent',
             'colors': ['orange', 'blue', 'gray', 'red', 'green', 'yellow']};
 
@@ -168,7 +173,7 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
             'width':1200,
             'legend': 'bottom',
             'height':600,
-            'chartArea': {'width': '75%', 'height':'65%', 'backgroundColor':'black'},
+            'chartArea': {'width': '100%', 'height':'65%', 'backgroundColor':'black'},
             'backgroundColor': 'transparent',
             'colors': ['orange', 'blue', 'gray', 'red', 'green', 'yellow']};
 
@@ -182,7 +187,21 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
 
 
         function draw_chart(stat_name, team_name, team_data) {
-            var data_table = new google.visualization.DataTable(team_data);
+            /*
+             var data_table = google.visualization.arrayToDataTable
+            ([['date', '1', {'type': 'string', 'role': 'style'}],
+              [1, 3, null],
+              [2, 2.5, null],
+              [3, 3, null],
+              [4, 4, null],
+              [5, 4, null],
+              [6, 3, 'point { size: 18; shape-type: star; fill-color: #a52714; }'],
+              [7, 2.5, null],
+              [8, 3, null]
+        ]);
+        */
+
+            var data_table = google.visualization.arrayToDataTable(team_data);
             //data_table.addColumn({'type': 'string', 'role':'tooltip'});
             //for (let i; i<data_table.)
             var chart = new google.visualization.LineChart(document.getElementById(stat_name + '_chart_' + team_name));
@@ -196,6 +215,20 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
                     series[i - 1] = {};
                 }
             }
+
+
+            //change some TEXT element ON POINT SELECTION?
+
+
+            google.visualization.events.addListener(chart, 'select', function () {
+                var selectedItem = chart.getSelection()[0];
+                var value = data_table.getValue(selectedItem.row, 3);
+                document.getElementById('game_outcome_' + team_name).innerHTML = value;
+                //alert('The user selected ' + value);
+                });
+
+
+
 
             google.visualization.events.addListener(chart, 'select', function () {
                 var sel = chart.getSelection();
@@ -228,6 +261,7 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
                     }
                 }
             });
+        chart.draw(data_table, chart_options[stat_name]);
         }
 
 
@@ -277,6 +311,7 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
             <td class="team_name">{{team.team_name}}</td>
             <td class="YTD">{{team.stat_ytd}}</td>
             <td class="chart" id="wRC_chart_{{ team.team_name }}"></td>
+            <td class="game_outome" id="game_outcome_{{ team.team_name }}"></td>
         </tr>
         {% endif %}
         {% endfor %}

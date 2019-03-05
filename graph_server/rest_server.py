@@ -11,6 +11,7 @@ import datetime
 from pyvirtualdisplay import Display
 import csv
 import mlbgame
+import json
 #from profilehooks import profile
 #from numpy import cumsum, insert
 #from multiprocessing.pool import ThreadPool
@@ -20,9 +21,11 @@ import mlbgame
 
 #PORT = 80
 
-#ADDRESS = "app.datasleuth.agency/mlb_graphs"
-ADDRESS = "localhost/mlb_graphs"
+ADDRESS = "app.datasleuth.agency/mlb_graphs"
+#ADDRESS = "localhost/mlb_graphs"
 INTERVALS = [1, 7, 15, 30, 60, 120]
+
+WL_COLOR = {"W": "green", "L": "red"}
 
 CHART_VAXIS = {
     "wRC": {"MAX": 275, "MIN": -30},
@@ -80,6 +83,151 @@ def daterange(start_date, end_date, interval):
         yield start_date + datetime.timedelta(n)
 
 
+"""embarrassing to make another helper but also I'm too lazy to re-factor"""
+def build_google_charts_json_data_table(fetched_team_json):
+    """
+    :param fetched_team_json: from fetch_stat_by_team
+    :return: https://developers.google.com/chart/interactive/docs/reference#dataparam
+
+            {
+      cols: [{id: 'A', label: 'NEW A', type: 'string'},
+             {id: 'B', label: 'B-label', type: 'number'},
+             {id: 'C', label: 'C-label', type: 'date'}
+      ],
+      rows: [{c:[{v: 'a'},
+                 {v: 1.0, f: 'One'},
+                 {v: new Date(2008, 1, 28, 0, 31, 26), f: '2/28/08 12:31 AM'}
+            ]},
+             {c:[{v: 'b'},
+                 {v: 2.0, f: 'Two'},
+                 {v: new Date(2008, 2, 30, 0, 31, 26), f: '3/30/08 12:31 AM'}
+            ]},
+             {c:[{v: 'c'},
+                 {v: 3.0, f: 'Three'},
+                 {v: new Date(2008, 3, 30, 0, 31, 26), f: '4/30/08 12:31 AM'}
+            ]}
+      ],
+      p: {foo: 'hello', bar: 'world!'}
+    }
+
+    also eg
+    var data = google.visualization.arrayToDataTable
+                ([['X', 'Y', {'type': 'string', 'role': 'style'}],
+                  [1, 3, null],
+                  [2, 2.5, null],
+                  [3, 3, null],
+                  [4, 4, null],
+                  [5, 4, null],
+                  [6, 3, 'point { size: 18; shape-type: star; fill-color: #a52714; }'],
+                  [7, 2.5, null],
+                  [8, 3, null]
+            ]);
+
+            fetched_team_json: for date in dates:
+            index_by_date["dates"] = [{"game_day": date,
+                                    '1_{}'.format(stat_name): float(fetched_team_data['1_{}'.format(stat_name)][date]),
+                                }]
+
+                # {"opponent": "str", "team_score": int, "opponent_score": int, "outcome": "W"|"L"}}
+                daily_wl = cached_daily_wl.setdefault(date, get_wl_string(date, team_name, db))
+                #daily_wl = get_wl_string(date, team_name, db)
+                index_by_date[date][GAME_OUTCOMES_KEY] = daily_wl
+                add_moving_averages_to_date_object(index_by_date[date], daily_stat, stat_name)
+
+
+            """
+    interval_name_map = {1: "Daily", 7: "Weekly", 15: "15-Day", 30: "30-Day", 60: "60-Day", 120: "120-Day"}
+
+    ret = []
+    # "p": {}}
+    stat_key = fetched_team_json["stat_name"]
+    stat_name = stat_key.split("_")[1]
+    header = [{"type": "date", "label": "gameday"}]
+
+    for interval in INTERVALS:
+        column_def = {}
+        # the series label
+        column_def["label"] = "{} {}".format(interval_name_map[interval], stat_name)
+        column_def["id"] = "{}_{}".format(stat_name, interval)
+        column_def["type"] = "number"
+        header.append(column_def)
+        if interval == 1:
+            header.append({"type": "string", "role": "style"})
+            header.append({"type": "string", "role": "tooltip", 'p': {"html": True}})
+
+    #header.append(json.dumps({"type": "string", "role": "style"}))
+    #header.append(json.dumps({"type": "string", "role": "tooltip", "isHtml": True}))
+
+    ret.append(header)
+
+    #ret["cols"].append({"type": "string", "role": "style"})
+    #ret["cols"].append({"type": "string", "role": "tooltip", "isHtml": True})
+
+    for date in fetched_team_json["dates"]:
+        """
+        date_object = {"game_day": date}
+        date_object["1_{}".format(stat_name)] = float(fetched_team_data['1_{}'.format(stat_name)][date])
+        date_object[GAME_OUTCOMES_KEY] = cached_daily_wl.setdefault(date, get_wl_string(date, team_name, db))
+        add_moving_averages_to_date_object(date_object, daily_stat, stat_name)
+        """
+        row = []
+        json_date = "Date({year}, {month}, {day})".format(
+            year=date["game_day"].year,
+            month=date["game_day"].month - 1,  # to match JS,
+            day=date["game_day"].day)
+        row.append(json_date)
+        for cell_name in ["{}_{}".format(interval, stat_name) for interval in INTERVALS]:
+            # float
+            row.append("{}".format(date[cell_name]))  #, 'f': json_date})
+
+            # after all columns added for each row, tack on style column attributes
+            # {"opponent": "str", "team_score": int, "opponent_score": int, "outcome": "W"|"L"}}
+            if cell_name.split("_")[0] == "1":
+
+                game_outcome = date[GAME_OUTCOMES_KEY]
+                if game_outcome["outcome"] is not None:
+
+                    outcome_color = WL_COLOR[game_outcome["outcome"]]
+                    # 'point { size: 18; shape-type: star; fill-color: #a52714; }'
+                    point_style = {"size": 8, "fill-color": outcome_color}
+                    row.append("point {{size:{}; fill-color: {};}}".format(8, outcome_color))
+
+                    outcome_tooltip = """
+                    <strong>{date}</strong><br>
+                    {stat_interval_name} {stat_name}: {stat}<br><br>
+                    <strong>Game Outcome</strong>:<br> 
+                    <strong>{outcome}</strong> ({our_score}) vs {away_team} ({their_score})
+                    """.format(
+                        date=date["game_day"].strftime("%m %d %Y"),
+                        stat_interval_name=interval_name_map[int(cell_name.split("_")[0])],
+                        stat_name=cell_name.split("_")[1],
+                        stat=date[cell_name],
+                        outcome=game_outcome["outcome"],
+                        our_score=game_outcome["team_score"],
+                        away_team=game_outcome["opponent"],
+                        their_score=game_outcome["opponent_score"]
+                    )
+
+                else:
+                    row.append("null")
+                    outcome_tooltip = """
+                    <strong>{date}</strong><br>
+                    {stat_interval_name} {stat_name}: {stat}<br><br>
+                    <strong>No Game</strong>:<br> 
+                    """.format(
+                        date=date["game_day"].strftime("%m %d %Y"),
+                        stat_interval_name=interval_name_map[int(cell_name.split("_")[0])],
+                        stat_name=cell_name.split("_")[1],
+                        stat=date[cell_name]
+                    )
+
+                row.append(outcome_tooltip)
+        ret.append(row)
+
+    return json.dumps(ret)
+
+
+
 # generate a list of json which each define a graph in a table row in the web page for one team on all intervals
 def populate_gviz_data(start_date, end_date):
     """
@@ -115,16 +263,21 @@ def populate_gviz_data(start_date, end_date):
 
     }
 
-
+    # a list of dict, each a series belonging to some chart or
     list_of_team_data = []
+
     for stat_name in ENABLED_STATS:
         for team in TEAM_NAMES:
             dict_for_page_rendering = {}
+            # all the moving averages for one stat, for one team, over an interval of dates
             stat_team_data = fetch_stat_by_team(start_date, end_date, team, stat_name)
             stat_ytd = stat_team_data["ytd_{}".format(stat_name)]
             del stat_team_data["ytd_{}".format(stat_name)]
-            GRAPH_FORMAT[stat_name].LoadData(stat_team_data)
-            stat_json = GRAPH_FORMAT[stat_name].ToJSon()
+
+            #GRAPH_FORMAT[stat_name] = #.LoadData(stat_team_data)
+            stat_json = build_google_charts_json_data_table(stat_team_data)
+            # comes out as a json string literal for input to google visualization
+            #stat_json = GRAPH_FORMAT[stat_name].ToJSon()
             #stat_json = GRAPH_FORMAT[stat_name].ToJSCode("table_name")
 
             dict_for_page_rendering["stat_data"] = stat_json
@@ -197,8 +350,8 @@ def get_wl_string(date, team_name, db):
     except KeyError:
         print "db miss for team {team_name} on date {date}".format(team_name=team_name, date=date)
         to_update = db[team_name]
-        to_update.setdefault(GAME_OUTCOMES_KEY, {})
-        to_update[GAME_OUTCOMES_KEY].setdefault(date, retrieve_team_gameday(team_name, date))
+        game_outcomes = to_update.setdefault(GAME_OUTCOMES_KEY, {})
+        gameday_report = game_outcomes.setdefault(date, retrieve_team_gameday(team_name, date))
 
         # {date: game_report}
         #to_update = to_update[GAME_OUTCOMES_KEY]
@@ -206,7 +359,7 @@ def get_wl_string(date, team_name, db):
         #to_update.update(retrieve_team_gameday(team_name, date))
         db[team_name] = to_update
         db.commit()
-        gameday_report = db[team_name][GAME_OUTCOMES_KEY][date]
+        #gameday_report = db[team_name][GAME_OUTCOMES_KEY][date]
 
         """{"opponent": opponent_short, "outcome": outcome,
          "team_score": team_score, "opponent_score": opponent_score}"""
@@ -241,7 +394,9 @@ def get_team_ytd_stat(start_date, daily_stat_dict):
 
 #TODO: had this been a real project, we'd need to re-map the data interface layer
 def fetch_stat_by_team(start_date, end_date, team_name, stat_name):
-    '''[ {("game_day", "date", "Game Day"): {
+    '''
+    :returns: all the moving averages for one stat, for one team, over an interval of dates
+    [ {("game_day", "date", "Game Day"): {
         "1_wRC":  ("number", "Daily wRC+"),
         "15_wRC": ("number", "15-Day wRC+ M.A."),
         "30_wRC": ("number", "15-Day wRC+ M.A."),
@@ -263,22 +418,24 @@ def fetch_stat_by_team(start_date, end_date, team_name, stat_name):
 
         ytd = get_team_ytd_stat(start_date, daily_stat)
         index_by_date["ytd_{}".format(stat_name)] = ytd
+        index_by_date["stat_name"] = stat_key
+        index_by_date["dates"] = []
+
 
         cached_daily_wl = db[team_name].setdefault(GAME_OUTCOMES_KEY, {})
 
-        for date in daily_stat:
+        for date in sorted(daily_stat.keys()):
             if date > end_date or date < start_date:
                 continue
             else:
-                index_by_date[date] = {"game_day": date,
-                                       '1_{}'.format(stat_name): float(fetched_team_data['1_{}'.format(stat_name)][date]),
-                                       }
-
                 # {"opponent": "str", "team_score": int, "opponent_score": int, "outcome": "W"|"L"}}
-                daily_wl = cached_daily_wl.setdefault(date, get_wl_string(date, team_name, db))
-                #daily_wl = get_wl_string(date, team_name, db)
-                index_by_date[date][GAME_OUTCOMES_KEY] = daily_wl
-                add_moving_averages_to_date_object(index_by_date[date], daily_stat, stat_name)
+                date_object = {"game_day": date}
+                date_object["1_{}".format(stat_name)] = float(
+                    fetched_team_data['1_{}'.format(stat_name)][date]
+                )
+                date_object[GAME_OUTCOMES_KEY] = cached_daily_wl.setdefault(date, get_wl_string(date, team_name, db))
+                add_moving_averages_to_date_object(date_object, daily_stat, stat_name)
+                index_by_date["dates"].append(date_object)
 
                 #save_the_date(team_name, date, index_by_date)
         return index_by_date
@@ -317,7 +474,7 @@ def update_sqlite_from_csv(db_name, csv_name):
 
                     if team_name not in db or db[team_name] is None:
                         team_data = {"name": team_name, update_key: {earliest_day: new_stat}}
-                    else: #team name in db and not None
+                    else:  #team name in db and not None
                         team_data = db[team_name]
                         if update_key not in team_data:
                             team_data[update_key] = {earliest_day: new_stat}
@@ -353,35 +510,70 @@ class ServeLandingPage:
 # endpoint for downloading and saving CSVs
 # first download all csv's. then we draw graphs with the saved data
 class ServeMLBMA(object):
+    super_awesome_cache = {}
+
+    @staticmethod
+    def build_ma_page(start_date_param, end_date_param,):
+        end_date = datetime.datetime.strptime(end_date_param, DATE_FORMAT)
+        # intervals = INTERVALS
+        # for interval_length_in_days in intervals:
+        #    # for start_day to end_day, get list of [(start_day - interval, start_day), (start_day+1 - interval, start+day+1), ...]
+        start_dates = list(daterange(start_date_param, end_date_param, 1))
+        # ranges = [
+        #    (date - datetime.timedelta(interval_length_in_days), date) for date in start_dates
+        #    if date-datetime.timedelta(interval_length_in_days)>=start_dates[0]
+        # ]
+        for date in start_dates:
+            scrape_date(start_date=date, end_date=date + datetime.timedelta(days=1))
+
+        page_template = load_template("graphs.html")
+        # a list of dictionaries, each of which is {"team_name": "", "stat_name": "", "stat_data": <StatData>}
+        # StatData needs to be a json literal of the form
+        """
+        {
+      cols: [{id: 'A', label: 'NEW A', type: 'string'},
+             {id: 'B', label: 'B-label', type: 'number'},
+             {id: 'C', label: 'C-label', type: 'date'}
+      ],
+      rows: [{c:[{v: 'a'},
+                 {v: 1.0, f: 'One'},
+                 {v: new Date(2008, 1, 28, 0, 31, 26), f: '2/28/08 12:31 AM'}
+            ]},
+             {c:[{v: 'b'},
+                 {v: 2.0, f: 'Two'},
+                 {v: new Date(2008, 2, 30, 0, 31, 26), f: '3/30/08 12:31 AM'}
+            ]},
+             {c:[{v: 'c'},
+                 {v: 3.0, f: 'Three'},
+                 {v: new Date(2008, 3, 30, 0, 31, 26), f: '4/30/08 12:31 AM'}
+            ]}
+      ],
+      p: {foo: 'hello', bar: 'world!'}
+    }
+        """
+        teams_json = populate_gviz_data(datetime.datetime.strptime(start_date_param, DATE_FORMAT), end_date)
+        teams_json.sort(key=lambda x: x['team_name'])
+        # teams_json = teams_json[:2]
+
+        interval_length_in_days = (end_date - datetime.datetime.strptime(start_date_param, DATE_FORMAT)).days
+        # teams_json: a list of dict containing name and chart data for each team
+
+        return page_template.render(teams=teams_json, start_date=start_date_param, end_date=end_date_param, port=PORT,
+                                    address=ADDRESS, CHART_VAXIS=CHART_VAXIS,
+                                    interval_length_in_days=interval_length_in_days)
+
     def on_get(self, req, resp):
         """Handles GET requests"""
         #print "{}".format(req)
         #pdb.set_trace()
         start_date_param = req._params.get("start_date")
         end_date_param = req._params.get("end_date")
-        end_date = datetime.datetime.strptime(end_date_param, DATE_FORMAT)
-        #intervals = INTERVALS
-        #for interval_length_in_days in intervals:
-        #    # for start_day to end_day, get list of [(start_day - interval, start_day), (start_day+1 - interval, start+day+1), ...]
-        start_dates = list(daterange(start_date_param, end_date_param, 1))
-        #ranges = [
-        #    (date - datetime.timedelta(interval_length_in_days), date) for date in start_dates
-        #    if date-datetime.timedelta(interval_length_in_days)>=start_dates[0]
-        #]
-        for date in start_dates:
-            scrape_date(start_date=date, end_date=date+datetime.timedelta(days=1))
-
         resp.status = falcon.HTTP_200  # This is the default status
         resp.content_type = 'text/html'
-        page_template = load_template("graphs.html")
-        teams_json = populate_gviz_data(datetime.datetime.strptime(start_date_param, DATE_FORMAT), end_date)
-        teams_json.sort(key=lambda x: x['team_name'])
-        #teams_json = teams_json[:2]
-
-        interval_length_in_days = (end_date - datetime.datetime.strptime(start_date_param, DATE_FORMAT)).days
-        # teams_json: a list of dict containing name and chart data for each team
-        resp.body = page_template.render(teams=teams_json, start_date=start_date_param, end_date=end_date_param, port=PORT,
-                                         address=ADDRESS, CHART_VAXIS=CHART_VAXIS, interval_length_in_days=interval_length_in_days)
+        #TODO: figure out the correct way to cahce like this
+        #resp.body = ServeMLBMA.super_awesome_cache.setdefault("{}->{}".format(start_date_param, end_date_param),
+        #                                                      ServeMLBMA.build_ma_page(start_date_param, end_date_param))
+        resp.body = ServeMLBMA.build_ma_page(start_date_param, end_date_param)
 
 
 class HandleCORS(object):
