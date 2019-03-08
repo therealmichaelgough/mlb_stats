@@ -414,7 +414,7 @@ def fetch_stat_by_team(start_date, end_date, team_name, stat_name):
         index_by_date = {}
         stat_key = '1_{}'.format(stat_name)
 
-        daily_stat = fetched_team_data[stat_key]
+        daily_stat = fetched_team_data.setdefault(stat_key, {})
 
         ytd = get_team_ytd_stat(start_date, daily_stat)
         index_by_date["ytd_{}".format(stat_name)] = ytd
@@ -454,9 +454,12 @@ schema:
 """
 def update_sqlite_from_csv(db_name, csv_name):
     #TODO: more robust date exraction
-    earliest_day = datetime.datetime.strptime(csv_name[-25:-4].split("_")[0], DATE_FORMAT)
-    latest_day = datetime.datetime.strptime(csv_name[-25:-4].split("_")[1], DATE_FORMAT)
-    interval = (latest_day - earliest_day).days
+    try:
+        earliest_day = datetime.datetime.strptime(csv_name[-25:-4].split("_")[0], DATE_FORMAT)
+        latest_day = datetime.datetime.strptime(csv_name[-25:-4].split("_")[1], DATE_FORMAT)
+        interval = (latest_day - earliest_day).days
+    except:
+        interval = 1
     #update_wrc(update_key, db_name, earliest_day)
 
     with SqliteDict(db_name) as db:
@@ -485,9 +488,13 @@ def update_sqlite_from_csv(db_name, csv_name):
         db.commit()
 
 
-def scrape_date(start_date, end_date):
+def scrape_date(start_date, end_date=None):
     start_as_string = start_date.date().strftime(DATE_FORMAT)
-    end_as_string = end_date.date().strftime(DATE_FORMAT)
+    if end_date is not None:
+        end_as_string = end_date.date().strftime(DATE_FORMAT)
+    else:
+        end_as_string = start_as_string
+
     csv_name = WRCScraper.get_csv_name(start_as_string, end_as_string)
 
     if not os.path.exists(csv_name):
@@ -524,7 +531,7 @@ class ServeMLBMA(object):
         #    if date-datetime.timedelta(interval_length_in_days)>=start_dates[0]
         # ]
         for date in start_dates:
-            scrape_date(start_date=date, end_date=date + datetime.timedelta(days=1))
+            scrape_date(start_date=date)#, end_date=date + datetime.timedelta(days=1))
 
         page_template = load_template("graphs.html")
         # a list of dictionaries, each of which is {"team_name": "", "stat_name": "", "stat_data": <StatData>}
