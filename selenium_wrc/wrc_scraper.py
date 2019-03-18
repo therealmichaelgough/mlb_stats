@@ -28,7 +28,8 @@ logger.addHandler(hdlr)
 logger.setLevel(logging.DEBUG)
 
 class WRCScraper:
-    table_xpath = '//*[@id="react-drop-test"]/div[2]/div/div[2]/div/div[1]/table'
+    #table_xpath = '//*[@id="react-drop-test"]/div[2]/div/div[2]/div/div[1]/table'
+    table_xpath = '//*[@id="react-drop-test"]/div[2]/div/div[1]/div/div[1]/table'
     export_data_xpath = '//*[@id="react-drop-test"]/div[2]/a'
     os.chdir("..")
     home = os.getcwd()
@@ -86,7 +87,10 @@ class WRCScraper:
         logger.debug("saving output file {} to {}".format(
             os.path.join(self.download_directory, self.download_original_name),
             os.path.join(self.data_dir, self.wrc_csv_name)))
+
         os.rename(os.path.join(self.download_directory, self.download_original_name), os.path.join(self.data_dir, self.wrc_csv_name))
+        # file not found
+
         #os.remove(self.download_directory)
 
         #    os.rename(os.path.join(WRCScraper.data_dir, self.download_secondary_name), os.path.join(self.data_dir, self.wrc_csv_name))

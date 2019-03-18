@@ -21,8 +21,8 @@ import json
 
 #PORT = 80
 
-ADDRESS = "app.datasleuth.agency/mlb_graphs"
-#ADDRESS = "localhost/mlb_graphs"
+#ADDRESS = "app.datasleuth.agency/mlb_graphs"
+ADDRESS = "localhost/mlb_graphs"
 INTERVALS = [1, 7, 15, 30, 60, 120]
 
 WL_COLOR = {"W": "green", "L": "red"}
@@ -409,6 +409,7 @@ def fetch_stat_by_team(start_date, end_date, team_name, stat_name):
     with SqliteDict(DB_NAME) as db:
         if team_name not in db:
             fetched_team_data = {'name': team_name}
+            db[team_name] = fetched_team_data
         else:
             fetched_team_data = db[team_name]
         index_by_date = {}
@@ -433,7 +434,7 @@ def fetch_stat_by_team(start_date, end_date, team_name, stat_name):
                 date_object["1_{}".format(stat_name)] = float(
                     fetched_team_data['1_{}'.format(stat_name)][date]
                 )
-                date_object[GAME_OUTCOMES_KEY] = cached_daily_wl.setdefault(date, get_wl_string(date, team_name, db))
+                date_object[GAME_OUTCOMES_KEY] = cached_daily_wl.setdefault(date, retrieve_team_gameday(team_name, date))
                 add_moving_averages_to_date_object(date_object, daily_stat, stat_name)
                 index_by_date["dates"].append(date_object)
 
@@ -453,14 +454,17 @@ schema:
 {'LAA': {'name': 'LAA', '1_wRC': {datetime.datetime(2018, 4, 7, 0, 0): '103.15789505901412'}}, '15_wRC': {...}}
 """
 def update_sqlite_from_csv(db_name, csv_name):
+    earliest_day = datetime.datetime.strptime(csv_name[-25:-4].split("_")[0], DATE_FORMAT)
+    """
     #TODO: more robust date exraction
     try:
-        earliest_day = datetime.datetime.strptime(csv_name[-25:-4].split("_")[0], DATE_FORMAT)
+    
         latest_day = datetime.datetime.strptime(csv_name[-25:-4].split("_")[1], DATE_FORMAT)
         interval = (latest_day - earliest_day).days
     except:
         interval = 1
     #update_wrc(update_key, db_name, earliest_day)
+    """
 
     with SqliteDict(db_name) as db:
         with open(csv_name, 'r') as csv_file:
@@ -468,7 +472,7 @@ def update_sqlite_from_csv(db_name, csv_name):
             for row in reader:
                 team_name = row["Tm"]
                 for stat_name in ENABLED_STATS:
-                    update_key = "{}_{}".format(interval, stat_name)
+                    update_key = "{}_{}".format(1, stat_name)
                     # ugly hack
                     if stat_name == "wRC":
                         new_stat = row[stat_name + "+"]
@@ -481,7 +485,7 @@ def update_sqlite_from_csv(db_name, csv_name):
                         team_data = db[team_name]
                         if update_key not in team_data:
                             team_data[update_key] = {earliest_day: new_stat}
-                        else: # update key in team data
+                        else:  # update key in team data
                             team_data[update_key][earliest_day] = new_stat
                     db[team_name] = team_data
             db.commit()
