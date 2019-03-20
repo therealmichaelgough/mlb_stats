@@ -12,12 +12,15 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import logging
+import datetime
 
 
 HEADER = "Season,Tm,PA,BB%,K%,BB/K,AVG,OBP,SLG,OPS,ISO,BABIP,wRC,wRAA,wOBA,wRC+"
 LINUX_CHROMEDRIVER = "chromedriver_linux"
 WINDOWS_CHROMEDRIVER = "chromedriver.exe"
 MAC_CHROMEDRIVER = "chromedriver_mac"
+
+DATE_FORMAT = "%Y-%m-%d"
 
 logger = logging.getLogger("WRCScraper")
 #logger.setLevel("DEBUG")
@@ -27,30 +30,41 @@ hdlr = logging.FileHandler('wrc_scraper.log')
 logger.addHandler(hdlr)
 logger.setLevel(logging.DEBUG)
 
+ENABLED_STATS = ["wRC", "wOBA", "wOBA_home", "wOBA_away"]
+
 class WRCScraper:
     #table_xpath = '//*[@id="react-drop-test"]/div[2]/div/div[2]/div/div[1]/table'
-    table_xpath = '//*[@id="react-drop-test"]/div[2]/div/div[1]/div/div[1]/table'
-    export_data_xpath = '//*[@id="react-drop-test"]/div[2]/a'
     os.chdir("..")
     home = os.getcwd()
     data_dir = os.path.join(home, "data")
 
-    def __init__(self, start_date, end_date, sleep_time=None):
+    def __init__(self, start_date, end_date, sleep_time=None, db_store=None):
+        if db_store is not None:
+            self.db_store = db_store
+
         self.start_time = time.time()
-        self.start_date = start_date
+        self.start_date = start_date.strftime(DATE_FORMAT)
+
         if sleep_time is None:
             sleep_time = 10
         self.sleep_time = sleep_time
         if end_date is None:
             self.end_date = self.start_date
         else:
-            self.end_date = end_date
+            self.end_date = end_date.strftime(DATE_FORMAT)
 
-        self.wrc_url = "https://www.fangraphs.com/leaders/splits-leaderboards?splitArr=&strgroup=season&statgroup=2&startDate={}&endDate={}&filter=&position=B&statType=team&autoPt=false&players=&pg=0&pageItems=30&sort=9,1&splitArrPitch=&splitTeams=false".format(
+        self.fangraphs_url = "https://www.fangraphs.com/leaders/splits-leaderboards?splitArr=&strgroup=season&statgroup=2&startDate={}&endDate={}&filter=&position=B&statType=team&autoPt=false&players=&pg=0&pageItems=30&sort=9,1&splitArrPitch=&splitTeams=false".format(
             self.start_date, self.end_date)
 
         self.webdriver_dir = os.path.join(WRCScraper.home, "web_driver")
         #time.sleep(4)
+        self.xpaths = {
+            "home_split_button": '//*[@id="react-drop-test"]/div[1]/div[3]/div/div[2]/div[2]/div[1]',
+            "away_split_button": '//*[@id="react-drop-test"]/div[1]/div[3]/div/div[2]/div[2]/div[2]',
+            "table": '//*[@id="react-drop-test"]/div[2]/div/div[1]/div/div[1]/table',
+            "update_button": '//*[@id="button-update"]',
+            "export_data_button": '//*[@id="react-drop-test"]/div[2]/a'
+        }
 
         if platform.system() == 'Darwin':
 
@@ -133,14 +147,9 @@ class WRCScraper:
         #self.set_cookies()
         #self.state = "login"
 
-    def scrape_wrc_all(self):
-        print "scraping wRC+ for {} to {}".format(self.start_date, self.end_date)
-
-        #print "pausing for page load?"
-        #time.sleep(self.sleep_time + 1)
-
+    def scrape_all_split(self):
         try:
-            self.driver.get(self.wrc_url)
+            self.driver.get(self.fangraphs_url)
             logger.debug("finding WRC table")
             table = WebDriverWait(self.driver, self.sleep_time).until(
                 EC.presence_of_element_located((By.XPATH, self.table_xpath))
@@ -151,20 +160,32 @@ class WRCScraper:
                 EC.presence_of_element_located((By.XPATH, self.export_data_xpath)))
             logger.debug("clicking on export..")
             coordinates = export.location_once_scrolled_into_view  # returns dict of X, Y coordinates
-            #self.driver.execute_script('window.scrollTo({}, {});'.format(coordinates['x'], coordinates['y']))
+            # self.driver.execute_script('window.scrollTo({}, {});'.format(coordinates['x'], coordinates['y']))
 
             export.click()
             logger.debug("clicked")
             time.sleep(1)
         except TimeoutException:
             print "no stats found for {} to {}".format(self.start_date, self.end_date)
-            self.save_empty_csv()
-        except Exception as e:
-            raise e
+        return []
+
+    def scrape_home_split(self):
+        return []
+
+    def scrape_away_split(self):
+        return []
+
+    def scrape_all(self):
+        print "scraping dates: {}-{}".format(self.start_date, self.end_date)
+        scrapes = []
+        try:
+            scrapes.append(self.scrape_all_split())
+            scrapes.append(self.scrape_away_split())
+            scrapes.append(self.scrape_home_split())
         finally:
             self.driver.quit()
             print "finished in {}".format(time.time() - self.start_time)
-            self.rename_download()
+        return scrapes
 
 
 if __name__ == "__main__":

@@ -287,6 +287,8 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
 <div class="tab">
     <button class="tablinks" id="defaultOpen" onclick="openTab(event, 'wRC')">wRC+</button>
     <button class="tablinks" onclick="openTab(event, 'wOBA')">wOBA</button>
+    <button class="tablinks" onclick="openTab(event, 'wOBA_home')">wOBA Home Split</button>
+    <button class="tablinks" onclick="openTab(event, 'wOBA_away')">wOBA Away Split</button>
 </div>
 
 <!-- Tab content -->
@@ -351,6 +353,72 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
             <td class="YTD">{{ team.stat_ytd }}</td>
             <td class="chart" id="wOBA_chart_{{ team.team_name }}"></td>
             <td class="game_outome" id="game_outcome_{{ team.team_name }}_wOBA"></td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+    </table>
+</div>
+
+<div id="wOBA_home" class="tabcontent">
+    <h1>Team wOBA Home Split from {{start_date}} to {{end_date}} ({{interval_length_in_days}} days)</h1>
+    <p>
+    </p>
+    <form action="http://{{address}}/graph" method="get">
+        start date:<br>
+        <input type="date" name="start_date" value="{{start_date}}"><br>
+        end date:<br>
+        <input type="date" name="end_date" value="{{end_date}}">
+        <input type="submit" name="get_stats" value="Get moving averages">
+    </form>
+
+    <!--Table and divs that hold the pie charts-->
+    <table class="columns">
+        <tr class="header">
+            <td style="text-align: left;">TEAM</td>
+            <td>YTD</td>
+            <td style="text-align: center;">wOBA MOVING AVERAGES (HOME)</td>
+        </tr>
+
+        {% for team in teams %}
+        {% if team.stat_name == "wOBA" %}
+        <tr>
+            <td class="team_name">{{team.team_name}}</td>
+            <td class="YTD">{{ team.stat_ytd }}</td>
+            <td class="chart" id="wOBA_home_chart_{{ team.team_name }}"></td>
+            <td class="game_outome" id="game_outcome_{{ team.team_name }}_wOBA_home"></td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+    </table>
+</div>
+
+<div id="wOBA_away" class="tabcontent">
+    <h1>Team wOBA Away Split from {{start_date}} to {{end_date}} ({{interval_length_in_days}} days)</h1>
+    <p>
+    </p>
+    <form action="http://{{address}}/graph" method="get">
+        start date:<br>
+        <input type="date" name="start_date" value="{{start_date}}"><br>
+        end date:<br>
+        <input type="date" name="end_date" value="{{end_date}}">
+        <input type="submit" name="get_stats" value="Get moving averages">
+    </form>
+
+    <!--Table and divs that hold the pie charts-->
+    <table class="columns">
+        <tr class="header">
+            <td style="text-align: left;">TEAM</td>
+            <td>YTD</td>
+            <td style="text-align: center;">wOBA MOVING AVERAGES (AWAY)</td>
+        </tr>
+
+        {% for team in teams %}
+        {% if team.stat_name == "wOBA" %}
+        <tr>
+            <td class="team_name">{{team.team_name}}</td>
+            <td class="YTD">{{ team.stat_ytd }}</td>
+            <td class="chart" id="wOBA_away_chart_{{ team.team_name }}"></td>
+            <td class="game_outome" id="game_outcome_{{ team.team_name }}_wOBA_away"></td>
         </tr>
         {% endif %}
         {% endfor %}

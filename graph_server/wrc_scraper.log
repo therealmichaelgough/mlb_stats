@@ -2637,3 +2637,6 @@ saving output file /Users/michael/upwork_projects/mlb_stats/data/tmp/2018-03-31-
 saving output file /Users/michael/upwork_projects/mlb_stats/data/tmp/2018-03-31-2018-03-31/Splits Leaderboard Data .csv to /Users/michael/upwork_projects/mlb_stats/data/wrc_2018-03-31_2018-03-31.csv
 saving output file /Users/michael/upwork_projects/mlb_stats/data/tmp/2018-03-31-2018-03-31/Splits Leaderboard Data .csv to /Users/michael/upwork_projects/mlb_stats/data/wrc_2018-03-31_2018-03-31.csv
 saving output file /Users/michael/upwork_projects/mlb_stats/data/tmp/2018-03-31-2018-03-31/Splits Leaderboard Data .csv to /Users/michael/upwork_projects/mlb_stats/data/wrc_2018-03-31_2018-03-31.csv
+finding WRC table
+table found: {'_parent': <selenium.webdriver.chrome.webdriver.WebDriver (session="cd55070b9e3cc4b71799a3d0d152e346")>, '_w3c': False, '_id': u'0.8881514289115571-1'}
+clicking on export..

@@ -1,15 +1,13 @@
 import falcon
 from waitress import serve
 import time
-from selenium_wrc.wrc_scraper import WRCScraper
+from selenium_wrc.data_interface_layer import DataAdapter
 from falcon.http_status import HTTPStatus
 import gviz_api
 import os
 import jinja2
-from sqlitedict import SqliteDict
 import datetime
 from pyvirtualdisplay import Display
-import csv
 import mlbgame
 import json
 #from profilehooks import profile
@@ -36,7 +34,8 @@ DATE_FORMAT = "%Y-%m-%d"
 
 DEBUG_CLEAR_WL = False
 
-ENABLED_STATS = ["wRC", "wOBA"]
+# these must match the tab names in HTML
+ENABLED_STATS = ["wRC", "wOBA", "wOBA_home", "wOBA_away"]
 
 TEAM_NAMES = {"OAK": "Athletics", "NYY": "Yankees", "SEA": "Mariners", "BOS": "Red Sox", "ATL": "Braves", "TBR": "Rays",
               "HOU": "Astros", "TOR": "Blue Jays", "CHW": "White Sox", "PIT": "Pirates", "LAA": "Angels", "NYM": "Mets",
@@ -47,6 +46,7 @@ TEAM_NAMES = {"OAK": "Athletics", "NYY": "Yankees", "SEA": "Mariners", "BOS": "R
 REVERSE_TEAM_NAMES = {v: k for k, v in TEAM_NAMES.iteritems()}
 
 GAME_OUTCOMES_KEY = "daily_game_outcomes"
+DATES_INDEX_KEY = "dates_available"
 #GAME_OUTCOMES_TOOLTIP_KEY = "daily_game_outcome_tooltip_string"
 
 DB_NAME = "data/wRC.sqlite"
@@ -64,21 +64,12 @@ def load_template(name):
         return jinja2.Template(fp.read())
 
 
-def launch_crawler(start_date, end_date):
-
-    spider = WRCScraper(start_date=start_date,
-                        end_date=end_date)
-
-    print "starting crawl"
-    spider.scrape_wrc_all()
-        #display.stop()
-    #time.sleep(1)
-    #spider.rename_download()
-
-
 def daterange(start_date, end_date, interval):
-    start_date = datetime.datetime.strptime(start_date, DATE_FORMAT)
-    end_date = datetime.datetime.strptime(end_date, DATE_FORMAT)
+    try:
+        start_date = datetime.datetime.strptime(start_date, DATE_FORMAT)
+        end_date = datetime.datetime.strptime(end_date, DATE_FORMAT)
+    except TypeError:
+        pass
     for n in range(0, int((end_date - start_date).days) + 1, interval):
         yield start_date + datetime.timedelta(n)
 
@@ -229,7 +220,7 @@ def build_google_charts_json_data_table(fetched_team_json):
 
 
 # generate a list of json which each define a graph in a table row in the web page for one team on all intervals
-def populate_gviz_data(start_date, end_date):
+def populate_gviz_data(start_date, end_date, db):
     """
     :param start_date:
     :param end_date:
@@ -270,7 +261,7 @@ def populate_gviz_data(start_date, end_date):
         for team in TEAM_NAMES:
             dict_for_page_rendering = {}
             # all the moving averages for one stat, for one team, over an interval of dates
-            stat_team_data = fetch_stat_by_team(start_date, end_date, team, stat_name)
+            stat_team_data = fetch_stat_by_team(start_date, end_date, team, stat_name, db)
             stat_ytd = stat_team_data["ytd_{}".format(stat_name)]
             del stat_team_data["ytd_{}".format(stat_name)]
 
@@ -340,7 +331,7 @@ GAME_OUTCOMES_KEY:{datetime.datetime(): {"opponent": "str", "team_score": int, "
  'name': 'LAA', 
  '1_wRC': {datetime.datetime(2018, 4, 7, 0, 0): '103.15789505901412'}}, '15_wRC': {...}}"""
 
-
+"""
 def get_wl_string(date, team_name, db):
     try:
         if DEBUG_CLEAR_WL:
@@ -361,39 +352,59 @@ def get_wl_string(date, team_name, db):
         db.commit()
         #gameday_report = db[team_name][GAME_OUTCOMES_KEY][date]
 
-        """{"opponent": opponent_short, "outcome": outcome,
-         "team_score": team_score, "opponent_score": opponent_score}"""
+        #{"opponent": opponent_short, "outcome": outcome,
+        # "team_score": team_score, "opponent_score": opponent_score}
     return "{outcome} vs {opponent} \n({team_score}-{opponent_score})".format(**gameday_report)
+"""
 
-
-def add_moving_averages_to_date_object(date, daily_stat, stat_name):
+def add_moving_averages_to_date_object(date, team_name, stat_name, db):
     '''
-    for ma in INTERVALS[1:] + ["ytd"]:
-        if ma == "ytd":
-            days_back = len(daily_wrc)
-        else:
-            days_back = ma
-        if '{}_wrc'.format(ma) in date:
-            continue
-            '''
-    for ma in INTERVALS[1:]:
-        start_date = date["game_day"] - datetime.timedelta(days=ma)
-        #start_date = date["game_day"] - datetime.timedelta(days=days_back)
-        lead_up_date_range = (d for d in (start_date + datetime.timedelta(days=n) for n in range((date["game_day"]-start_date).days +1)))
-        wrc_over_lead_up = [float(daily_stat[d]) for d in lead_up_date_range if d in daily_stat]
-        average = sum(wrc_over_lead_up) / float(len(wrc_over_lead_up))
-        date['{}_{}'.format(ma, stat_name)] = round(average,2)
-
-def get_team_ytd_stat(start_date, daily_stat_dict):
-    year = start_date.year
-    lead_up_date_range = (d for d in daily_stat_dict if d.year == year)
-    wrc_over_lead_up = [float(daily_stat_dict[d]) for d in lead_up_date_range if d in daily_stat_dict]
-    average = sum(wrc_over_lead_up) / (float(len(wrc_over_lead_up)) + 1*pow(10, -10))
-    return round(average, 3)
+    date: e.g. {"game_day" <datetime>, "1_wRC": <float>, "7_wRC": <float>, "game_outcome": {<game_outcome>>}}
+    '''
+    for interval in INTERVALS[1:]:
+        try:
+            moving_average = date["{}_{}".format(interval, stat_name)]
+        except KeyError:
+            start_date = date["game_day"] - datetime.timedelta(days=interval)
+            lead_up_date_range = (d for d in (start_date + datetime.timedelta(days=n) for n in range((date["game_day"]-start_date).days +1)))
+            stat_over_lead_up = db.get_stat_date_range(lead_up_date_range, team_name, stat_name)
+            average = sum([day["1_{}".format(stat_name)] for day in stat_over_lead_up]) / float(len(stat_over_lead_up))
+            date['{}_{}'.format(interval, stat_name)] = round(average,2)
+            db.update_date(date)
+    return date
 
 
-#TODO: had this been a real project, we'd need to re-map the data interface layer
-def fetch_stat_by_team(start_date, end_date, team_name, stat_name):
+def get_team_ytd_stat(end_date, team_name, stat_name, db):
+    """get a final average of a stat for a team over all available dates for the current year
+    :param end_date: the final date in the averaging period
+    :param team_name: 3-letter abbr
+    :param stat_name: one of AVAILABLE_STATS
+    :param db: data access layer object
+    :return: float
+    """
+    year = end_date.year
+    ytd = db.read_ytd(end_date, team_name, stat_name)
+    if ytd is None:
+        #[{game_day, stat_name: float...}, ...]
+        dates_this_year = db.get_all_dates_in_year(year, team_name, stat_name)
+        stat_to_date = [float(dates_this_year[stat_name]) for date in dates_this_year]
+        ytd = sum(stat_to_date) / (float(len(stat_to_date)) + 1*pow(10, -10))
+        db.write_ytd(end_date, team_name, stat_name)
+    return round(ytd, 3)
+
+
+def add_game_outcome_to_date_object(date_object, team_name, db):
+    try:
+        game_outcome = date_object[GAME_OUTCOMES_KEY]
+    except KeyError:
+        date = date_object["game_day"]
+        game_outcome = retrieve_team_gameday(team_name, date)
+        date_object[GAME_OUTCOMES_KEY] = game_outcome
+        db.update_date(date)
+    return date_object
+
+
+def fetch_stat_by_team(start_date, end_date, team_name, stat_name, db):
     '''
     :returns: all the moving averages for one stat, for one team, over an interval of dates
     [ {("game_day", "date", "Game Day"): {
@@ -404,42 +415,24 @@ def fetch_stat_by_team(start_date, end_date, team_name, stat_name):
         "120_wRC": ("number", "15-Day wRC+ M.A.")}} ]
 
         possible stat names: ['wRC', 'wOBA']
+
+        data storage schema
+        db[team_name] -> {stat_key: {date: {}}}
         '''
+    index_by_date = {}
+    stat_key = '1_{}'.format(stat_name)
 
-    with SqliteDict(DB_NAME) as db:
-        if team_name not in db:
-            fetched_team_data = {'name': team_name}
-            db[team_name] = fetched_team_data
-        else:
-            fetched_team_data = db[team_name]
-        index_by_date = {}
-        stat_key = '1_{}'.format(stat_name)
+    for date in list(daterange(start_date, end_date, 1)):
+        # a single date, for a single team. multiple stats: e.g. {"game_day" <datetime>, "1_wRC": <float>, "7_wRC": <float>, "game_outcome": {<game_outcome>>}}
+        date_object = db.read_date(date, team_name, stat_name)
+        date_object = add_moving_averages_to_date_object(date_object, team_name, stat_name, db)
+        date_object = add_game_outcome_to_date_object(date_object, team_name, db)
+        index_by_date["dates"].append(date_object)
 
-        daily_stat = fetched_team_data.setdefault(stat_key, {})
-
-        ytd = get_team_ytd_stat(start_date, daily_stat)
-        index_by_date["ytd_{}".format(stat_name)] = ytd
-        index_by_date["stat_name"] = stat_key
-        index_by_date["dates"] = []
-
-
-        cached_daily_wl = db[team_name].setdefault(GAME_OUTCOMES_KEY, {})
-
-        for date in sorted(daily_stat.keys()):
-            if date > end_date or date < start_date:
-                continue
-            else:
-                # {"opponent": "str", "team_score": int, "opponent_score": int, "outcome": "W"|"L"}}
-                date_object = {"game_day": date}
-                date_object["1_{}".format(stat_name)] = float(
-                    fetched_team_data['1_{}'.format(stat_name)][date]
-                )
-                date_object[GAME_OUTCOMES_KEY] = cached_daily_wl.setdefault(date, retrieve_team_gameday(team_name, date))
-                add_moving_averages_to_date_object(date_object, daily_stat, stat_name)
-                index_by_date["dates"].append(date_object)
-
-                #save_the_date(team_name, date, index_by_date)
-        return index_by_date
+    ytd = get_team_ytd_stat(end_date, team_name, stat_name, db)
+    index_by_date["ytd_{}".format(stat_name)] = ytd
+    index_by_date["stat_name"] = stat_key
+    return index_by_date
 
 
 def save_the_date(team_name, date, date_index):
@@ -448,62 +441,6 @@ def save_the_date(team_name, date, date_index):
             for interval in date_index:
                 db[team_name][interval] = date_index[interval]
         db.commit()
-
-"""
-schema:
-{'LAA': {'name': 'LAA', '1_wRC': {datetime.datetime(2018, 4, 7, 0, 0): '103.15789505901412'}}, '15_wRC': {...}}
-"""
-def update_sqlite_from_csv(db_name, csv_name):
-    earliest_day = datetime.datetime.strptime(csv_name[-25:-4].split("_")[0], DATE_FORMAT)
-    """
-    #TODO: more robust date exraction
-    try:
-    
-        latest_day = datetime.datetime.strptime(csv_name[-25:-4].split("_")[1], DATE_FORMAT)
-        interval = (latest_day - earliest_day).days
-    except:
-        interval = 1
-    #update_wrc(update_key, db_name, earliest_day)
-    """
-
-    with SqliteDict(db_name) as db:
-        with open(csv_name, 'r') as csv_file:
-            reader = csv.DictReader(csv_file)
-            for row in reader:
-                team_name = row["Tm"]
-                for stat_name in ENABLED_STATS:
-                    update_key = "{}_{}".format(1, stat_name)
-                    # ugly hack
-                    if stat_name == "wRC":
-                        new_stat = row[stat_name + "+"]
-                    else:
-                        new_stat = row[stat_name]
-
-                    if team_name not in db or db[team_name] is None:
-                        team_data = {"name": team_name, update_key: {earliest_day: new_stat}}
-                    else:  #team name in db and not None
-                        team_data = db[team_name]
-                        if update_key not in team_data:
-                            team_data[update_key] = {earliest_day: new_stat}
-                        else:  # update key in team data
-                            team_data[update_key][earliest_day] = new_stat
-                    db[team_name] = team_data
-            db.commit()
-        db.commit()
-
-
-def scrape_date(start_date, end_date=None):
-    start_as_string = start_date.date().strftime(DATE_FORMAT)
-    if end_date is not None:
-        end_as_string = end_date.date().strftime(DATE_FORMAT)
-    else:
-        end_as_string = start_as_string
-
-    csv_name = WRCScraper.get_csv_name(start_as_string, end_as_string)
-
-    if not os.path.exists(csv_name):
-        launch_crawler(start_as_string, end_as_string)
-    update_sqlite_from_csv(db_name=DB_NAME, csv_name=csv_name)
 
 
 class ServeLandingPage:
@@ -525,7 +462,9 @@ class ServeMLBMA(object):
 
     @staticmethod
     def build_ma_page(start_date_param, end_date_param,):
+        data_access_object = DataAdapter(sqlite_file=DB_NAME)
         end_date = datetime.datetime.strptime(end_date_param, DATE_FORMAT)
+        start_date = datetime.datetime.strptime(start_date_param, DATE_FORMAT)
         # intervals = INTERVALS
         # for interval_length_in_days in intervals:
         #    # for start_day to end_day, get list of [(start_day - interval, start_day), (start_day+1 - interval, start+day+1), ...]
@@ -534,8 +473,8 @@ class ServeMLBMA(object):
         #    (date - datetime.timedelta(interval_length_in_days), date) for date in start_dates
         #    if date-datetime.timedelta(interval_length_in_days)>=start_dates[0]
         # ]
-        for date in start_dates:
-            scrape_date(start_date=date)#, end_date=date + datetime.timedelta(days=1))
+        #for date in start_dates:
+        #    scrape_date(start_date=date)#, end_date=date + datetime.timedelta(days=1))
 
         page_template = load_template("graphs.html")
         # a list of dictionaries, each of which is {"team_name": "", "stat_name": "", "stat_data": <StatData>}
@@ -562,7 +501,8 @@ class ServeMLBMA(object):
       p: {foo: 'hello', bar: 'world!'}
     }
         """
-        teams_json = populate_gviz_data(datetime.datetime.strptime(start_date_param, DATE_FORMAT), end_date)
+        teams_json = populate_gviz_data(start_date, end_date, data_access_object)
+
         teams_json.sort(key=lambda x: x['team_name'])
         # teams_json = teams_json[:2]
 
