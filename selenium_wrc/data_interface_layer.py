@@ -2,6 +2,8 @@ from selenium_wrc.wrc_scraper import WRCScraper
 from sqlitedict import SqliteDict
 import datetime
 import csv
+from graph_server.utilities import daterange
+from graph_server.utilities import TEAM_NAMES
 
 ENABLED_STATS = ["wRC", "wOBA", "wOBA_home", "wOBA_away"]
 
@@ -35,11 +37,40 @@ class ScrapeDriver:
         update_sqlite_from_csv(db_name=DB_NAME, csv_name=csv_name)
 
 
-class MLBStatDay:
+class MLBStatsOneDayOneTeam:
     """represents all relevant statistics for a single team on a single date
     {"game_day": datetime, "1_wRC": float, "game_outcome": {game report},
         # "7_wRC": float ..., }
     """
+    def __init__(self, team, date, **kwargs):
+        self.game_day = date
+        self.team_name = team
+        for stat_name in kwargs:
+            self.stat_name = kwargs[stat_name]
+
+    @staticmethod
+    def read_stat_from_db(db_date, team_name, stat_name, db, date):
+        """retrieve a team stat for a single team for the given date. if the team or stat isn't there, store it as empty
+        :param db_date: a list of team stat dicts for one date
+        :param date: datetime object (key for db team stats)
+        :return : {"game_day" <datetime>, "1_wRC": <float>, "7_wRC": <float>, "game_outcome": {<game_outcome>>}}
+        """
+        ret = MLBStatsOneDayOneTeam(team_name, date)
+        try:
+            team_stats = db_date[team_name]
+            for k, v in team_stats.iteritems():
+                if stat_name in k:
+                    ret[k] = team_stats[k]
+        except KeyError:
+            print "no team {} for date {}".format(team_name, date)
+            pass
+        return ret
+
+    def __setitem__(self, key, value):
+        self.key = value
+
+    def __getitem__(self, item):
+        return self.__dict__[item]
 
 class DataAdapter:
     """
@@ -109,50 +140,84 @@ class DataAdapter:
     def __init__(self, sqlite_file):
         self.sqlite_file_name = sqlite_file
 
-    def write_date(self, date, team_name, stat_name, stat_value):
-        """stores the date object and replaces existing
-        :param date: an MLBStatDay object
-        :return:
-        """
-        pass
-
-    def read_date(self, date, team_name, stat_name):
+    def read_date(self, date, team_name, stat_name=None):
         """
         :param date: datetime obj
         :param team_name: 3-letter team abbr
         :param stat_name: key for stat to store. e.g. 1_wRC, 1_wOBA,
         :return: an MLBStatDay object
         """
+        ret = {"team_name": team_name, "game_day": date}
         with SqliteDict(self.sqlite_file_name) as db:
             try:
-                return MLBStatDay(db[date], team_name, stat_name)
-
+                stored_date = db[date]
             except KeyError:
-                scraper = WRCScraper(start_date=date)
-                # {team_name: {stat_name: stat}}
-                csv_list = scraper.scrape_all()
-                all_teams_all_stats_for_day = self.transform_scraped(csv_list)  # type: nested dict
-                for team in all_teams_all_stats_for_day:
-                    for stat_name in all_teams_all_stats_for_day[team]:
-                        to_write = MLBStatDay(team, stat_name, all_teams_all_stats_for_day[team][stat_name])
-                        self.update_date(to_write)
-        return self.read_date(date, team_name, stat_name)
+                print "no games stored on {}".format(date)
+                stored_date = self.fetch_and_store(date, db)
+            try:
+                if len(stored_date.keys()) == 1:
+                    raise KeyError
+                team_stats_on_day = stored_date[team_name]
+            except KeyError:
+                print "no games found for {} on {}".format(team_name, date)
+                team_stats_on_day = {"team_name": team_name, "game_day": date}
 
-    def update_date(self, date):
+            if stat_name is not None:
+                for k, v in team_stats_on_day.iteritems():
+                    if stat_name in k or k in ["game_outcome"]:
+                        ret.update({k: v})
+            else:
+                ret.update(team_stats_on_day)
+        return ret
+
+    def fetch_and_store(self, date, db):
+        scraper = WRCScraper(start_date=date)
+        # {team_name: {stat_name: stat}}
+        csv_list = scraper.scrape_all()
+        all_teams_all_stats_for_day = self.transform_scraped(csv_list)  # type: dict
+        for team in all_teams_all_stats_for_day:
+            self.update_date(date, team, all_teams_all_stats_for_day[team], db)
+        return all_teams_all_stats_for_day
+
+    def update_date(self, date, team, stat_dict, db=None):
+        """stores the date object in the database. will not overwrite existing fields unless new values are specified
+        :param date: an MLBStatDay object
+        :return:
+        """
+        close = False
+        if db is None:
+            db = SqliteDict(self.sqlite_file_name)
+            close = True
+
+        game_day = date["game_day"]
+        object_to_update = {"team_name": team, "game_day": game_day}
+        object_to_update.update(stat_dict)
+        try:
+            existing_date = db[game_day][team]
+            existing_date[team].update(object_to_update)
+        except KeyError:
+            existing_date = {team: object_to_update}
+        db[game_day] = existing_date
+        db.commit()
+        if close:
+            db.close()
+
+    def write_date(self, object_to_store, db):
         """stores the date object in the database. will not overwrite existing fields unless new values are specified
         :param date: an MLBStatDay object
         :return:
         """
         pass
 
-    def get_all_dates_in_year(self, year, team_name, stat_name):
+    def read_all_dates_in_year(self, year, end_date, team_name, stat_name):
         """
         :param year: yyyy
         :param team_name: 3-letter abbr
         :param stat_name: one of [wRC, wOBA]
         :return: [{"game_day": date, "stat_name": stat_value, ...}, ...]
         """
-        pass
+        year_to_date_days = daterange(datetime.date(year, 1, 1), end_date)
+        return self.get_stat_date_range(year_to_date_days, team_name, stat_name)
 
     def get_stat_date_range(self, iterable_of_datetime, team_name, stat_name):
         """
@@ -161,7 +226,10 @@ class DataAdapter:
         :param stat_name:
         :return: list of MLBStatDay
         """
-        #[float(daily_stat[d]) for d in lead_up_date_range if d in daily_stat]
+        dates = []
+        for date in iterable_of_datetime:
+            dates.append(self.read_date(date, team_name, stat_name))
+        return dates
 
     def read_ytd(self, datetime_obj, team_name, stat_name):
         """
@@ -181,8 +249,21 @@ class DataAdapter:
 
     def transform_scraped(self, csv_list):
         """
-        :param csv_list: a list of csv-like objects from the WRCScraper for a single date
+        :param csv_list: a dict of lists, one per split, each containing dicts, one per team,
+         from the WRCScraper for a single date
         :return: a dict of {team: {stat_name: stat}}
         """
+        def find_scraped_team_data(team_name, split_name, stats_list):
+            for scraped_team_split in stats_list:
+                if scraped_team_split["team_name"] == team_name:
+                    return {"1_{}_{}".format(k, split_name): v for k, v in scraped_team_split.iteritems() if k != "team_name"}
+            return {}
+
         scraped = {}
+        # if nothing scraped, then there were no games on that day
+        for team_name in TEAM_NAMES:
+            for split_name, split_stats_list in csv_list.iteritems():
+                team_stats = scraped.setdefault(team_name, {})
+                team_stats.update(find_scraped_team_data(team_name, split_name, split_stats_list))
+
         return scraped

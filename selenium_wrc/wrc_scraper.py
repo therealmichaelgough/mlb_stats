@@ -38,7 +38,7 @@ class WRCScraper:
     home = os.getcwd()
     data_dir = os.path.join(home, "data")
 
-    def __init__(self, start_date, end_date, sleep_time=None, db_store=None):
+    def __init__(self, start_date, end_date=None, sleep_time=None, db_store=None):
         if db_store is not None:
             self.db_store = db_store
 
@@ -63,7 +63,8 @@ class WRCScraper:
             "away_split_button": '//*[@id="react-drop-test"]/div[1]/div[3]/div/div[2]/div[2]/div[2]',
             "table": '//*[@id="react-drop-test"]/div[2]/div/div[1]/div/div[1]/table',
             "update_button": '//*[@id="button-update"]',
-            "export_data_button": '//*[@id="react-drop-test"]/div[2]/a'
+            "export_data_button": '//*[@id="react-drop-test"]/div[2]/a',
+            "no_thanks_button": '//*[@id="my_popup"]/div[3]/a[2]'
         }
 
         if platform.system() == 'Darwin':
@@ -148,44 +149,95 @@ class WRCScraper:
         #self.state = "login"
 
     def scrape_all_split(self):
+        all_split = []
         try:
             self.driver.get(self.fangraphs_url)
             logger.debug("finding WRC table")
             table = WebDriverWait(self.driver, self.sleep_time).until(
-                EC.presence_of_element_located((By.XPATH, self.table_xpath))
+                EC.presence_of_element_located((By.XPATH, self.xpaths["table"]))
 
             )
-            logger.debug("table found: {}".format(table.__dict__))
-            export = WebDriverWait(self.driver, self.sleep_time).until(
-                EC.presence_of_element_located((By.XPATH, self.export_data_xpath)))
-            logger.debug("clicking on export..")
-            coordinates = export.location_once_scrolled_into_view  # returns dict of X, Y coordinates
-            # self.driver.execute_script('window.scrollTo({}, {});'.format(coordinates['x'], coordinates['y']))
-
-            export.click()
-            logger.debug("clicked")
-            time.sleep(1)
+            # HEADER =u'# Season Tm PA BB% K% BB/K AVG OBP SLG OPS ISO BABIP wRC wRAA wOBA wRC+'
+            for row in table.text.split('\n')[1:]:
+                fields = row.split()
+                team_name = fields[2]
+                wrc = fields[-1]
+                woba = fields[-2]
+                all_split.append({"team_name": team_name,
+                                  "wRC": wrc,
+                                  "wOBA": woba
+                                  })
         except TimeoutException:
             print "no stats found for {} to {}".format(self.start_date, self.end_date)
-        return []
 
-    def scrape_home_split(self):
-        return []
+        return all_split
 
-    def scrape_away_split(self):
-        return []
+    def extract_fields_from_table(self, table, mapping):
+        """
+        :param table: text from html table. assumed first row is header
+        :param mapping: {field_name: column_number}
+        :return: list of dictionaries of field names to field values extracted from html according to mapping
+        """
+        ret = []
+        for row in table.text.split('\n')[1:]:
+            extracted_row = {}
+            fields = row.split()
+            for field_name in mapping:
+                extracted_row[field_name] = fields[mapping[field_name]]
+
+            ret.append(extracted_row)
+        return ret
+
+    def navigate_and_scrape_table(self, navigate_button, mapping):
+        split_button = WebDriverWait(self.driver, self.sleep_time).until(
+            EC.presence_of_element_located((By.XPATH, self.xpaths[navigate_button+"_button"])))
+        split_button.click()
+        WebDriverWait(self.driver, self.sleep_time).until(
+            EC.presence_of_element_located((By.XPATH, self.xpaths["update_button"]))).click()
+        table = WebDriverWait(self.driver, self.sleep_time).until(
+            EC.presence_of_element_located((By.XPATH, self.xpaths["table"])))
+        return self.extract_fields_from_table(table, mapping)
 
     def scrape_all(self):
         print "scraping dates: {}-{}".format(self.start_date, self.end_date)
-        scrapes = []
+        ret = {}
         try:
-            scrapes.append(self.scrape_all_split())
-            scrapes.append(self.scrape_away_split())
-            scrapes.append(self.scrape_home_split())
+            self.driver.get(self.fangraphs_url)
+
+            scrape_mappings = {"away_split": {"wOBA": -2, "team_name": 2}, "home_split": {"wOBA": -2, "team_name": 2}}
+
+            all_table = WebDriverWait(self.driver, self.sleep_time).until(
+                EC.presence_of_element_located((By.XPATH, self.xpaths["table"]))
+            )
+
+            all_mapping = {"wRC": -1, "team_name": 2, "wOBA": -2}
+            ret["all"] = self.extract_fields_from_table(all_table, all_mapping)
+            for navigate_button in scrape_mappings:
+                i, wait = 3, 1
+                unscraped = True
+                while i > 0 and unscraped:
+                    try:
+                        ret[navigate_button] = self.navigate_and_scrape_table(navigate_button, scrape_mappings[navigate_button])
+                        unscraped = False
+                    except Exception as e:
+                        i -= 1
+                        membership_prompt = WebDriverWait(self.driver, 1).until(
+                            EC.presence_of_element_located((By.XPATH, self.xpaths["table"])))
+                        if membership_prompt is not None:
+                            membership_prompt.click()
+                        print "failed scraping table: {}: {}. trying {} more times".format(navigate_button, e, i)
+                        time.sleep(wait)
+                        wait *=2
+        except TimeoutException:
+            # no table or no page => assume no games that day. now we return the default object
+            print "no games on {}-{}".format(self.start_date, self.end_date)
+            for split in ["all", "away_split", "home_split"]:
+                ret[split] = []
+
         finally:
             self.driver.quit()
             print "finished in {}".format(time.time() - self.start_time)
-        return scrapes
+            return ret
 
 
 if __name__ == "__main__":

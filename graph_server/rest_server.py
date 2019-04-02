@@ -2,6 +2,11 @@ import falcon
 from waitress import serve
 import time
 from selenium_wrc.data_interface_layer import DataAdapter
+from graph_server.utilities import daterange
+from graph_server.utilities import DATE_FORMAT
+from graph_server.utilities import TEAM_NAMES
+from graph_server.utilities import REVERSE_TEAM_NAMES
+from graph_server.utilities import ENABLED_STATS
 from falcon.http_status import HTTPStatus
 import gviz_api
 import os
@@ -30,20 +35,8 @@ CHART_VAXIS = {
     "wOBA": {"MAX": 1, "MIN": -1}
 }
 
-DATE_FORMAT = "%Y-%m-%d"
-
 DEBUG_CLEAR_WL = False
 
-# these must match the tab names in HTML
-ENABLED_STATS = ["wRC", "wOBA", "wOBA_home", "wOBA_away"]
-
-TEAM_NAMES = {"OAK": "Athletics", "NYY": "Yankees", "SEA": "Mariners", "BOS": "Red Sox", "ATL": "Braves", "TBR": "Rays",
-              "HOU": "Astros", "TOR": "Blue Jays", "CHW": "White Sox", "PIT": "Pirates", "LAA": "Angels", "NYM": "Mets",
-              "CHC": "Cubs", "LAD": "Dodgers", "ARI": "D-backs", "WSN": "Nationals", "STL": "Cardinals", "MIN": "Twins",
-              "DET": "Tigers", "PHI": "Phillies", "KCR": "Royals", "CIN": "Reds", "SFG": "Giants", "SDP": "Padres",
-              "CLE": "Indians", "MIL": "Brewers", "TEX": "Rangers", "BAL": "Orioles", "MIA": "Marlins", "COL": "Rockies"}
-
-REVERSE_TEAM_NAMES = {v: k for k, v in TEAM_NAMES.iteritems()}
 
 GAME_OUTCOMES_KEY = "daily_game_outcomes"
 DATES_INDEX_KEY = "dates_available"
@@ -62,16 +55,6 @@ def load_template(name):
     path = os.path.abspath('graph_server/templates')
     with open(os.path.join(os.getcwd(), path, name), 'r') as fp:
         return jinja2.Template(fp.read())
-
-
-def daterange(start_date, end_date, interval):
-    try:
-        start_date = datetime.datetime.strptime(start_date, DATE_FORMAT)
-        end_date = datetime.datetime.strptime(end_date, DATE_FORMAT)
-    except TypeError:
-        pass
-    for n in range(0, int((end_date - start_date).days) + 1, interval):
-        yield start_date + datetime.timedelta(n)
 
 
 """embarrassing to make another helper but also I'm too lazy to re-factor"""
@@ -361,6 +344,7 @@ def add_moving_averages_to_date_object(date, team_name, stat_name, db):
     '''
     date: e.g. {"game_day" <datetime>, "1_wRC": <float>, "7_wRC": <float>, "game_outcome": {<game_outcome>>}}
     '''
+    stat_key = "1_{}".format(stat_name)
     for interval in INTERVALS[1:]:
         try:
             moving_average = date["{}_{}".format(interval, stat_name)]
@@ -368,9 +352,18 @@ def add_moving_averages_to_date_object(date, team_name, stat_name, db):
             start_date = date["game_day"] - datetime.timedelta(days=interval)
             lead_up_date_range = (d for d in (start_date + datetime.timedelta(days=n) for n in range((date["game_day"]-start_date).days +1)))
             stat_over_lead_up = db.get_stat_date_range(lead_up_date_range, team_name, stat_name)
-            average = sum([day["1_{}".format(stat_name)] for day in stat_over_lead_up]) / float(len(stat_over_lead_up))
-            date['{}_{}'.format(interval, stat_name)] = round(average,2)
-            db.update_date(date)
+            valid_values_only = []
+            for day in stat_over_lead_up:
+                try:
+                    valid_values_only.append(day[stat_key])
+                except:
+                    continue
+
+            average = sum(valid_values_only) / (float(len(valid_values_only)) + 1*pow(10, -10))
+            ma_key = '{}_{}'.format(interval, stat_name)
+            ma_value = round(average, 2)
+            date[ma_key] = ma_value
+            db.update_date(date, team_name, {ma_key: ma_value}, )
     return date
 
 
@@ -386,10 +379,10 @@ def get_team_ytd_stat(end_date, team_name, stat_name, db):
     ytd = db.read_ytd(end_date, team_name, stat_name)
     if ytd is None:
         #[{game_day, stat_name: float...}, ...]
-        dates_this_year = db.get_all_dates_in_year(year, team_name, stat_name)
+        dates_this_year = db.read_all_dates_in_year(year, end_date, team_name, stat_name)
         stat_to_date = [float(dates_this_year[stat_name]) for date in dates_this_year]
         ytd = sum(stat_to_date) / (float(len(stat_to_date)) + 1*pow(10, -10))
-        db.write_ytd(end_date, team_name, stat_name)
+        db.update_date(end_date, team_name, {"ytd_{}".format(stat_name): ytd})
     return round(ytd, 3)
 
 
@@ -414,7 +407,7 @@ def fetch_stat_by_team(start_date, end_date, team_name, stat_name, db):
         "60_wRC": ("number", "15-Day wRC+ M.A."),
         "120_wRC": ("number", "15-Day wRC+ M.A.")}} ]
 
-        possible stat names: ['wRC', 'wOBA']
+        possible stat names: ['wRC_all', 'wOBA_all', 'wOBA_home', 'wOBA_away']
 
         data storage schema
         db[team_name] -> {stat_key: {date: {}}}
@@ -433,14 +426,6 @@ def fetch_stat_by_team(start_date, end_date, team_name, stat_name, db):
     index_by_date["ytd_{}".format(stat_name)] = ytd
     index_by_date["stat_name"] = stat_key
     return index_by_date
-
-
-def save_the_date(team_name, date, date_index):
-    with SqliteDict(DB_NAME) as db:
-        if team_name in db:
-            for interval in date_index:
-                db[team_name][interval] = date_index[interval]
-        db.commit()
 
 
 class ServeLandingPage:
