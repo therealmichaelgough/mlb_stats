@@ -13,8 +13,9 @@ import os
 import jinja2
 import datetime
 from pyvirtualdisplay import Display
-import mlbgame
 import json
+from graph_server.utilities import retrieve_team_gameday
+
 #from profilehooks import profile
 #from numpy import cumsum, insert
 #from multiprocessing.pool import ThreadPool
@@ -115,7 +116,7 @@ def build_google_charts_json_data_table(fetched_team_json):
     ret = []
     # "p": {}}
     stat_key = fetched_team_json["stat_name"]
-    stat_name = stat_key.split("_")[1]
+    stat_name = "_".join(stat_key.split("_")[1:])
     header = [{"type": "date", "label": "gameday"}]
 
     for interval in INTERVALS:
@@ -152,7 +153,10 @@ def build_google_charts_json_data_table(fetched_team_json):
         row.append(json_date)
         for cell_name in ["{}_{}".format(interval, stat_name) for interval in INTERVALS]:
             # float
-            row.append("{}".format(date[cell_name]))  #, 'f': json_date})
+            try:
+                row.append("{}".format(date[cell_name]))  #, 'f': json_date})
+            except:
+                continue
 
             # after all columns added for each row, tack on style column attributes
             # {"opponent": "str", "team_score": int, "opponent_score": int, "outcome": "W"|"L"}}
@@ -240,6 +244,7 @@ def populate_gviz_data(start_date, end_date, db):
     # a list of dict, each a series belonging to some chart or
     list_of_team_data = []
 
+    print "fulfilling request for dates {} - {}".format(start_date, end_date)
     for stat_name in ENABLED_STATS:
         for team in TEAM_NAMES:
             dict_for_page_rendering = {}
@@ -264,48 +269,6 @@ def populate_gviz_data(start_date, end_date, db):
             )
 
     return list_of_team_data
-
-CACHED_GAMEDAY_REPORTS = {}
-#TODO CHECK THIS
-# getting reports for all teams for a day takes just as long as getting a report for a single team
-def retrieve_cached_gameday_report(date, long_team_name):
-    if date in CACHED_GAMEDAY_REPORTS:
-        return CACHED_GAMEDAY_REPORTS[date][long_team_name]
-    else:
-        CACHED_GAMEDAY_REPORTS[date] = {}
-        fetched_reports_all_teams_day = mlbgame.games(date.year, date.month, date.day)[0]
-        for game_report in fetched_reports_all_teams_day:
-            CACHED_GAMEDAY_REPORTS[date].update({game_report.home_team: game_report})
-            CACHED_GAMEDAY_REPORTS[date].update({game_report.away_team: game_report})
-        return CACHED_GAMEDAY_REPORTS[date][long_team_name]
-
-
-def retrieve_team_gameday(team_name, date):
-    long_team_name = TEAM_NAMES[team_name]
-    compiled_gameday_report = {"opponent": None, "outcome": None, "team_score": None, "opponent_score": None}
-
-    try:
-        fetched_gameday_report = retrieve_cached_gameday_report(date, long_team_name)
-
-        if fetched_gameday_report.home_team == long_team_name:
-            we_are_home = True
-        else:
-            we_are_home = False
-
-        outcome = {True: "W", False: "L"}[long_team_name == fetched_gameday_report.w_team]
-
-        opponent_short = REVERSE_TEAM_NAMES[{True: fetched_gameday_report.away_team,
-                                             False: fetched_gameday_report.home_team}[we_are_home]]
-
-        team_score = {False: fetched_gameday_report.away_team_runs, True: fetched_gameday_report.home_team_runs}[we_are_home]
-        opponent_score = {True: fetched_gameday_report.away_team_runs, False: fetched_gameday_report.home_team_runs}[we_are_home]
-
-        compiled_gameday_report.update({"opponent": opponent_short, "outcome": outcome,
-                                        "team_score": team_score, "opponent_score": opponent_score})
-    except (IndexError, AttributeError, KeyError):
-        print "no games for {} on {}".format(long_team_name, date)
-
-    return compiled_gameday_report
 
 
 """db schema:
@@ -344,26 +307,25 @@ def add_moving_averages_to_date_object(date, team_name, stat_name, db):
     '''
     date: e.g. {"game_day" <datetime>, "1_wRC": <float>, "7_wRC": <float>, "game_outcome": {<game_outcome>>}}
     '''
+    print "adding moving averages..."
     stat_key = "1_{}".format(stat_name)
     for interval in INTERVALS[1:]:
-        try:
-            moving_average = date["{}_{}".format(interval, stat_name)]
-        except KeyError:
-            start_date = date["game_day"] - datetime.timedelta(days=interval)
-            lead_up_date_range = (d for d in (start_date + datetime.timedelta(days=n) for n in range((date["game_day"]-start_date).days +1)))
-            stat_over_lead_up = db.get_stat_date_range(lead_up_date_range, team_name, stat_name)
-            valid_values_only = []
-            for day in stat_over_lead_up:
-                try:
-                    valid_values_only.append(day[stat_key])
-                except:
-                    continue
-
+        print "interval: {} days".format(interval)
+        start_date = date["game_day"] - datetime.timedelta(days=interval)
+        lead_up_date_range = (d for d in (start_date + datetime.timedelta(days=n) for n in range((date["game_day"]-start_date).days +1)))
+        stat_over_lead_up = db.get_stat_date_range(lead_up_date_range, team_name, stat_name)
+        valid_values_only = []
+        for day in stat_over_lead_up:
+            try:
+                valid_values_only.append(day[stat_key])
+            except KeyError:
+                continue
+        if valid_values_only:
             average = sum(valid_values_only) / (float(len(valid_values_only)) + 1*pow(10, -10))
             ma_key = '{}_{}'.format(interval, stat_name)
             ma_value = round(average, 2)
             date[ma_key] = ma_value
-            db.update_date(date, team_name, {ma_key: ma_value}, )
+        #db.update_date(date['game_day'], team_name, {ma_key: ma_value}, )
     return date
 
 
@@ -380,20 +342,21 @@ def get_team_ytd_stat(end_date, team_name, stat_name, db):
     if ytd is None:
         #[{game_day, stat_name: float...}, ...]
         dates_this_year = db.read_all_dates_in_year(year, end_date, team_name, stat_name)
-        stat_to_date = [float(dates_this_year[stat_name]) for date in dates_this_year]
+        stat_to_date = [float(date[stat_name]) for date in dates_this_year if stat_name in date]
         ytd = sum(stat_to_date) / (float(len(stat_to_date)) + 1*pow(10, -10))
-        db.update_date(end_date, team_name, {"ytd_{}".format(stat_name): ytd})
+        #db.update_date(end_date, team_name, {"ytd_{}".format(stat_name): ytd})
     return round(ytd, 3)
 
 
 def add_game_outcome_to_date_object(date_object, team_name, db):
+    print "fetching outcome for game: {}".format(date_object)
     try:
         game_outcome = date_object[GAME_OUTCOMES_KEY]
     except KeyError:
         date = date_object["game_day"]
         game_outcome = retrieve_team_gameday(team_name, date)
         date_object[GAME_OUTCOMES_KEY] = game_outcome
-        db.update_date(date)
+        db.update_date(date, team_name, {GAME_OUTCOMES_KEY: game_outcome})
     return date_object
 
 
@@ -414,13 +377,19 @@ def fetch_stat_by_team(start_date, end_date, team_name, stat_name, db):
         '''
     index_by_date = {}
     stat_key = '1_{}'.format(stat_name)
+    print "populating {} for {}".format(stat_name, team_name)
 
     for date in list(daterange(start_date, end_date, 1)):
+        print "populating date: {}".format(date)
         # a single date, for a single team. multiple stats: e.g. {"game_day" <datetime>, "1_wRC": <float>, "7_wRC": <float>, "game_outcome": {<game_outcome>>}}
         date_object = db.read_date(date, team_name, stat_name)
-        date_object = add_moving_averages_to_date_object(date_object, team_name, stat_name, db)
         date_object = add_game_outcome_to_date_object(date_object, team_name, db)
-        index_by_date["dates"].append(date_object)
+        date_list = index_by_date.setdefault("dates", [])
+        date_list.append(date_object)
+
+    for date_object in date_list:
+        add_moving_averages_to_date_object(date_object, team_name, stat_name, db)
+
 
     ytd = get_team_ytd_stat(end_date, team_name, stat_name, db)
     index_by_date["ytd_{}".format(stat_name)] = ytd

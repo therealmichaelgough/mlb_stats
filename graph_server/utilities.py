@@ -1,4 +1,6 @@
 import datetime
+import mlbgame
+from datetime import timedelta
 
 DATE_FORMAT = "%Y-%m-%d"
 
@@ -25,5 +27,49 @@ def daterange(start_date, end_date, interval=1):
         end_date = datetime.datetime.strptime(end_date, DATE_FORMAT)
     except TypeError:
         pass
+
     for n in range(0, int((end_date - start_date).days) + 1, interval):
         yield start_date + datetime.timedelta(n)
+
+
+
+def retrieve_team_gameday(team_name, date):
+    long_team_name = TEAM_NAMES[team_name]
+    compiled_gameday_report = {"opponent": None, "outcome": None, "team_score": None, "opponent_score": None}
+
+    try:
+        fetched_gameday_report = retrieve_cached_gameday_report(date, long_team_name)
+
+        if fetched_gameday_report.home_team == long_team_name:
+            we_are_home = True
+        else:
+            we_are_home = False
+
+        outcome = {True: "W", False: "L"}[long_team_name == fetched_gameday_report.w_team]
+
+        opponent_short = REVERSE_TEAM_NAMES[{True: fetched_gameday_report.away_team,
+                                             False: fetched_gameday_report.home_team}[we_are_home]]
+
+        team_score = {False: fetched_gameday_report.away_team_runs, True: fetched_gameday_report.home_team_runs}[we_are_home]
+        opponent_score = {True: fetched_gameday_report.away_team_runs, False: fetched_gameday_report.home_team_runs}[we_are_home]
+
+        compiled_gameday_report.update({"opponent": opponent_short, "outcome": outcome,
+                                        "team_score": team_score, "opponent_score": opponent_score})
+    except (IndexError, AttributeError, KeyError):
+        print "no gameday report for {} on {}".format(long_team_name, date)
+
+    return compiled_gameday_report
+
+CACHED_GAMEDAY_REPORTS = {}
+#TODO CHECK THIS
+# getting reports for all teams for a day takes just as long as getting a report for a single team
+def retrieve_cached_gameday_report(date, long_team_name):
+    if date in CACHED_GAMEDAY_REPORTS:
+        return CACHED_GAMEDAY_REPORTS[date][long_team_name]
+    else:
+        CACHED_GAMEDAY_REPORTS[date] = {}
+        fetched_reports_all_teams_day = mlbgame.games(date.year, date.month, date.day)[0]
+        for game_report in fetched_reports_all_teams_day:
+            CACHED_GAMEDAY_REPORTS[date].update({game_report.home_team: game_report})
+            CACHED_GAMEDAY_REPORTS[date].update({game_report.away_team: game_report})
+        return CACHED_GAMEDAY_REPORTS[date][long_team_name]

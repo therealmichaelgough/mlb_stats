@@ -135,6 +135,7 @@ class WRCScraper:
         opts.add_argument(random_ua)
         #opts.add_argument("--headless")
         opts.add_argument("--no-sandbox")
+        opts.add_argument("--load-extension={}".format(os.path.join(self.webdriver_dir, 'adblock')))
         prefs = {"download.default_directory": self.download_directory,
                  "profile.default_content_settings.popups": 0}
 

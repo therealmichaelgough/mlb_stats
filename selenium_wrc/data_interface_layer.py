@@ -4,6 +4,9 @@ import datetime
 import csv
 from graph_server.utilities import daterange
 from graph_server.utilities import TEAM_NAMES
+from graph_server.utilities import retrieve_team_gameday
+
+OPENING_DAY = datetime.datetime(2019, 3, 27)
 
 ENABLED_STATS = ["wRC", "wOBA", "wOBA_home", "wOBA_away"]
 
@@ -140,7 +143,7 @@ class DataAdapter:
     def __init__(self, sqlite_file):
         self.sqlite_file_name = sqlite_file
 
-    def read_date(self, date, team_name, stat_name=None):
+    def read_date(self, date, team_name, stat_name=None, read_only=False):
         """
         :param date: datetime obj
         :param team_name: 3-letter team abbr
@@ -152,14 +155,19 @@ class DataAdapter:
             try:
                 stored_date = db[date]
             except KeyError:
-                print "no games stored on {}".format(date)
-                stored_date = self.fetch_and_store(date, db)
+                print "no games stored in DB from {}".format(date)
+                if (not read_only) and date > OPENING_DAY and date <= datetime.datetime.today() and retrieve_team_gameday(team_name, date)['outcome'] is not None:
+
+                    print "fetching valid day {} from fangraphs".format(date)
+                    stored_date = self.fetch_and_store(date, db)
+                else:
+                    stored_date = {}
             try:
                 if len(stored_date.keys()) == 1:
                     raise KeyError
                 team_stats_on_day = stored_date[team_name]
             except KeyError:
-                print "no games found for {} on {}".format(team_name, date)
+                print "no game read from fangraphs for {} on {}".format(team_name, date)
                 team_stats_on_day = {"team_name": team_name, "game_day": date}
 
             if stat_name is not None:
@@ -181,7 +189,8 @@ class DataAdapter:
 
     def update_date(self, date, team, stat_dict, db=None):
         """stores the date object in the database. will not overwrite existing fields unless new values are specified
-        :param date: an MLBStatDay object
+        :param date: datetime obj
+        :param stat_dict: dict of stat names to stat values for one day
         :return:
         """
         close = False
@@ -189,15 +198,19 @@ class DataAdapter:
             db = SqliteDict(self.sqlite_file_name)
             close = True
 
-        game_day = date["game_day"]
-        object_to_update = {"team_name": team, "game_day": game_day}
+        #game_day = date["game_day"]
+        object_to_update = {"team_name": team, "game_day": date}
         object_to_update.update(stat_dict)
         try:
-            existing_date = db[game_day][team]
-            existing_date[team].update(object_to_update)
+            existing_date = db[date]
         except KeyError:
-            existing_date = {team: object_to_update}
-        db[game_day] = existing_date
+            existing_date = {t: {} for t in TEAM_NAMES}
+
+        team_data = existing_date[team]
+        team_data.update(object_to_update)
+        #team_data = {team: object_to_update}
+        existing_date.update({team: team_data})
+        db[date] = existing_date
         db.commit()
         if close:
             db.close()
@@ -216,7 +229,7 @@ class DataAdapter:
         :param stat_name: one of [wRC, wOBA]
         :return: [{"game_day": date, "stat_name": stat_value, ...}, ...]
         """
-        year_to_date_days = daterange(datetime.date(year, 1, 1), end_date)
+        year_to_date_days = daterange(OPENING_DAY, end_date)
         return self.get_stat_date_range(year_to_date_days, team_name, stat_name)
 
     def get_stat_date_range(self, iterable_of_datetime, team_name, stat_name):
@@ -227,8 +240,10 @@ class DataAdapter:
         :return: list of MLBStatDay
         """
         dates = []
+        print "getting stats on date range"
         for date in iterable_of_datetime:
-            dates.append(self.read_date(date, team_name, stat_name))
+            print "\t{}".format(date)
+            dates.append(self.read_date(date, team_name, stat_name, read_only=True))
         return dates
 
     def read_ytd(self, datetime_obj, team_name, stat_name):
@@ -256,7 +271,7 @@ class DataAdapter:
         def find_scraped_team_data(team_name, split_name, stats_list):
             for scraped_team_split in stats_list:
                 if scraped_team_split["team_name"] == team_name:
-                    return {"1_{}_{}".format(k, split_name): v for k, v in scraped_team_split.iteritems() if k != "team_name"}
+                    return {"1_{}_{}".format(k, split_name): float(v) for k, v in scraped_team_split.iteritems() if k != "team_name"}
             return {}
 
         scraped = {}
