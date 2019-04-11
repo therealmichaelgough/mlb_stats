@@ -84,6 +84,7 @@ def retrieve_cached_gameday_report(date, long_team_name=None):
             team_report = all_teams_report[long_team_name]
             if team_report.game_status != 'FINAL':
                 return None
+            return team_report
         except KeyError:
             return None
     else:
