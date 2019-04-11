@@ -5,10 +5,7 @@ import csv
 from graph_server.utilities import daterange
 from graph_server.utilities import TEAM_NAMES
 from graph_server.utilities import retrieve_team_gameday
-
-OPENING_DAY = datetime.datetime(2019, 3, 27)
-
-ENABLED_STATS = ["wRC", "wOBA", "wOBA_home", "wOBA_away"]
+from graph_server.config import OPENING_DAY
 
 class ScrapeDriver:
     """something to orchestrate scraping
@@ -143,45 +140,42 @@ class DataAdapter:
     def __init__(self, sqlite_file):
         self.sqlite_file_name = sqlite_file
 
-    def read_date(self, date, team_name, stat_name=None, read_only=False):
+    def read_date(self, date, team_name=None, stat_name=None, read_only=False):
         """
         :param date: datetime obj
         :param team_name: 3-letter team abbr
         :param stat_name: key for stat to store. e.g. 1_wRC, 1_wOBA,
         :return: an MLBStatDay object
         """
-        ret = {"team_name": team_name, "game_day": date}
+        ret = {"game_day": date}
         with SqliteDict(self.sqlite_file_name) as db:
             try:
                 stored_date = db[date]
             except KeyError:
                 print "no games stored in DB from {}".format(date)
-                if (not read_only) and date > OPENING_DAY and date <= datetime.datetime.today() and retrieve_team_gameday(team_name, date)['outcome'] is not None:
-
-                    print "fetching valid day {} from fangraphs".format(date)
+                if (not read_only) and date <= datetime.datetime.today() and \
+                        retrieve_team_gameday(team_name, date)['outcome'] is not None:
+                    #print "fetching valid day {} from fangraphs".format(date)
                     stored_date = self.fetch_and_store(date, db)
                 else:
-                    stored_date = {}
+                    stored_date = {"game_day": date}
+            if team_name is None:
+                return stored_date
             try:
-                if len(stored_date.keys()) == 1:
-                    raise KeyError
-                team_stats_on_day = stored_date[team_name]
+                ret.update(stored_date[team_name])
+                ret.update({"team_name": team_name})
             except KeyError:
-                print "no game read from fangraphs for {} on {}".format(team_name, date)
-                team_stats_on_day = {"team_name": team_name, "game_day": date}
-
-            if stat_name is not None:
-                for k, v in team_stats_on_day.iteritems():
-                    if stat_name in k or k in ["game_outcome"]:
-                        ret.update({k: v})
-            else:
-                ret.update(team_stats_on_day)
+                print "team {} not found in db from day {}".format(team_name, date)
         return ret
 
     def fetch_and_store(self, date, db):
-        scraper = WRCScraper(start_date=date)
         # {team_name: {stat_name: stat}}
-        csv_list = scraper.scrape_all()
+        csv_list = {}
+        while not all(["home" in csv_list, "away" in csv_list, "all" in csv_list]):
+            scraper = WRCScraper(start_date=date)
+            csv_list = scraper.scrape_all()
+            if not csv_list and datetime.datetime.today().date() == date.date():
+                break
         all_teams_all_stats_for_day = self.transform_scraped(csv_list)  # type: dict
         for team in all_teams_all_stats_for_day:
             self.update_date(date, team, all_teams_all_stats_for_day[team], db)
@@ -205,6 +199,7 @@ class DataAdapter:
             existing_date = db[date]
         except KeyError:
             existing_date = {t: {} for t in TEAM_NAMES}
+            existing_date.update({"game_day": date})
 
         team_data = existing_date[team]
         team_data.update(object_to_update)
@@ -232,27 +227,20 @@ class DataAdapter:
         year_to_date_days = daterange(OPENING_DAY, end_date)
         return self.get_stat_date_range(year_to_date_days, team_name, stat_name)
 
-    def get_stat_date_range(self, iterable_of_datetime, team_name, stat_name):
+    def get_stat_date_range(self, iterable_of_datetime, team_name=None, stat_name=None):
         """
         :param iterable_of_datetime:
         :param team_name:
         :param stat_name:
         :return: list of MLBStatDay
         """
-        dates = []
+        dates = {}
         print "getting stats on date range"
         for date in iterable_of_datetime:
-            print "\t{}".format(date)
-            dates.append(self.read_date(date, team_name, stat_name, read_only=True))
+            #print "\t{}".format(date)
+            date_read = self.read_date(date, team_name, stat_name, read_only=True)
+            dates[date_read['game_day']] = date_read
         return dates
-
-    def read_ytd(self, datetime_obj, team_name, stat_name):
-        """
-        :param datetime_obj:
-        :param team_name:
-        :param stat_name:
-        :return:
-        """
 
     def write_ytd(self, datetime_obj, team_name, stat_name):
         """

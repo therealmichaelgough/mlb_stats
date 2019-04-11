@@ -177,7 +177,11 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
             'backgroundColor': 'transparent',
             'colors': ['orange', 'blue', 'gray', 'red', 'green', 'yellow']};
 
-        var chart_options =  {"wRC": wRC_options, "wOBA": wOBA_options};
+        var chart_options =  {"wRC_all": wRC_options,
+            "wOBA_all": wOBA_options,
+            "wOBA_home": wOBA_options,
+            "wOBA_away": wOBA_options};
+
 
         function draw_stat_chart(team_name, team_data, stat_name, tabName) {
             if (stat_name == tabName) {
@@ -285,8 +289,8 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
 </p>
 <!-- Tab links -->
 <div class="tab">
-    <button class="tablinks" id="defaultOpen" onclick="openTab(event, 'wRC')">wRC+</button>
-    <button class="tablinks" onclick="openTab(event, 'wOBA')">wOBA</button>
+    <button class="tablinks" id="defaultOpen" onclick="openTab(event, 'wRC_all')">wRC+</button>
+    <button class="tablinks" onclick="openTab(event, 'wOBA_all')">wOBA</button>
     <button class="tablinks" onclick="openTab(event, 'wOBA_home')">wOBA Home Split</button>
     <button class="tablinks" onclick="openTab(event, 'wOBA_away')">wOBA Away Split</button>
 </div>
@@ -313,12 +317,12 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
         </tr>
 
         {% for team in teams %}
-        {% if team.stat_name == "wRC" %}
+        {% if "wRC_all" in team.stat_name %}
         <tr>
             <td class="team_name">{{team.team_name}}</td>
             <td class="YTD">{{team.stat_ytd}}</td>
-            <td class="chart" id="wRC_chart_{{ team.team_name }}"></td>
-            <td class="game_outome" id="game_outcome_{{ team.team_name }}_wRC"></td>
+            <td class="chart" id="wRC_all_chart_{{ team.team_name }}"></td>
+            <td class="game_outome" id="game_outcome_{{ team.team_name }}_wRC_all"></td>
 
         </tr>
         {% endif %}
@@ -347,12 +351,12 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
         </tr>
 
         {% for team in teams %}
-        {% if team.stat_name == "wOBA" %}
+        {% if "wOBA_all" in team.stat_name %}
         <tr>
             <td class="team_name">{{team.team_name}}</td>
             <td class="YTD">{{ team.stat_ytd }}</td>
-            <td class="chart" id="wOBA_chart_{{ team.team_name }}"></td>
-            <td class="game_outome" id="game_outcome_{{ team.team_name }}_wOBA"></td>
+            <td class="chart" id="wOBA_all_chart_{{ team.team_name }}"></td>
+            <td class="game_outome" id="game_outcome_{{ team.team_name }}_wOBA_all"></td>
         </tr>
         {% endif %}
         {% endfor %}
@@ -380,7 +384,7 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
         </tr>
 
         {% for team in teams %}
-        {% if team.stat_name == "wOBA" %}
+        {% if "wOBA_home" in team.stat_name %}
         <tr>
             <td class="team_name">{{team.team_name}}</td>
             <td class="YTD">{{ team.stat_ytd }}</td>
@@ -413,7 +417,7 @@ fix wOBA chart scaling (parameterize chart options using jinja?)
         </tr>
 
         {% for team in teams %}
-        {% if team.stat_name == "wOBA" %}
+        {% if "wOBA_away" in team.stat_name %}
         <tr>
             <td class="team_name">{{team.team_name}}</td>
             <td class="YTD">{{ team.stat_ytd }}</td>
