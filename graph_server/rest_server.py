@@ -34,7 +34,7 @@ from graph_server.config import OPENING_DAY
 #PORT = 80
 
 
-display = Display(visible=0, size=(800, 600))
+display = Display(visible=0, size=(1024, 1200))
 display.start()
 
 #logging.basicConfig(filename="/waitress.log")
@@ -299,7 +299,7 @@ def add_moving_averages_to_date_object(date, stat_name, team_name, run_up_stats)
     print "adding {} moving averages for {}...".format(stat_name, team_name)
     stat_key = "1_{}".format(stat_name)
     for interval in INTERVALS[1:]:
-        #print "interval: {} days".format(interval)
+        print "interval: {} days".format(interval)
         start_date = date["game_day"] - datetime.timedelta(days=interval)
         lead_up_date_range = (d for d in (start_date + datetime.timedelta(days=n) for n in range((date["game_day"]-start_date).days +1)))
         valid_values_only = []
@@ -361,11 +361,11 @@ def fetch_stat_by_team(start_date, end_date, team_name, stat_name, db):
     index_by_date = {}
     date_list = index_by_date.setdefault("dates", [])
     stat_key = '1_{}'.format(stat_name)
-    #print "populating {} for {}".format(stat_name, team_name)
+    print "populating {} for {}".format(stat_name, team_name)
 
     for date in list(daterange(start_date, end_date, 1)):
-        if date >= OPENING_DAY:
-            #print "populating date: {}".format(date)
+        if date >= OPENING_DAY and date < datetime.datetime.today():
+            print "populating date: {}".format(date)
             # a single date, for a single team. multiple stats: e.g. {"game_day" <datetime>, "1_wRC": <float>, "7_wRC": <float>, "game_outcome": {<game_outcome>>}}
             date_object = db.read_date(date, team_name, stat_name)
             if "1_{}".format(stat_name) not in date_object:
@@ -389,9 +389,10 @@ class ServeLandingPage:
         resp.status = falcon.HTTP_200
         resp.content_type = 'text/html'
         template = load_template('get_wrc_graphs.html')
-        today = datetime.date.today()
+        today = datetime.date.today() - datetime.timedelta(days=1)
         today_string = today.strftime(DATE_FORMAT)
-        yesterday = today - datetime.timedelta(days=1)
+        #yesterday = today - datetime.timedelta(days=1)
+        yesterday = OPENING_DAY
         yesterday_sting = yesterday.strftime(DATE_FORMAT)
         resp.body = template.render(today=today_string, yesterday=yesterday_sting, port=PORT, address=ADDRESS)
 
@@ -400,6 +401,18 @@ class ServeLandingPage:
 # first download all csv's. then we draw graphs with the saved data
 class ServeMLBMA(object):
     super_awesome_cache = {}
+    """TODO: from flask import Flask
+from flask_caching import Cache
+
+app = Flask(__name__)
+# Check Configuring Flask-Caching section for more details
+cache = Cache(app, config={'CACHE_TYPE': 'simple'})
+...
+class Person(db.Model):
+    @cache.memoize(50)
+    def has_membership(self, role_id):
+        return Group.query.filter_by(user=self, role_id=role_id).count() >= 1
+    """
 
     @staticmethod
     def build_ma_page(start_date_param, end_date_param,):

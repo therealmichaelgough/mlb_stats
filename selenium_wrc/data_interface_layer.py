@@ -148,16 +148,19 @@ class DataAdapter:
         :return: an MLBStatDay object
         """
         ret = {"game_day": date}
+        if date < OPENING_DAY or date >= datetime.datetime.today():
+            return ret
         with SqliteDict(self.sqlite_file_name) as db:
             try:
                 stored_date = db[date]
             except KeyError:
                 print "no games stored in DB from {}".format(date)
-                if (not read_only) and date <= datetime.datetime.today() and \
+                if (not read_only) and date < datetime.datetime.today() and \
                         retrieve_team_gameday(team_name, date)['outcome'] is not None:
-                    #print "fetching valid day {} from fangraphs".format(date)
+                    print "fetching valid day {} from fangraphs".format(date)
                     stored_date = self.fetch_and_store(date, db)
                 else:
+                    print "no scrape - day not valid: {} (ro: {})".format(date, read_only)
                     stored_date = {"game_day": date}
             if team_name is None:
                 return stored_date
@@ -237,7 +240,7 @@ class DataAdapter:
         dates = {}
         print "getting stats on date range"
         for date in iterable_of_datetime:
-            #print "\t{}".format(date)
+            print "\t{}".format(date)
             date_read = self.read_date(date, team_name, stat_name, read_only=True)
             dates[date_read['game_day']] = date_read
         return dates
