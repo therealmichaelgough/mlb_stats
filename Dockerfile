@@ -40,16 +40,15 @@ libxrender1 libxss1 libxtst6 \
 ca-certificates fonts-liberation libappindicator1 libnss3 lsb-release \
 xdg-utils wget chromium unzip
 
-RUN apt-get  install -y xvfb x11vnc x11-xkb-utils xfonts-100dpi xfonts-75dpi xfonts-scalable xfonts-cyrillic x11-apps libglib2.0-0=2.50.3-2 \
-    libnss3=2:3.26.2-1.1+deb9u1 \
-    libgconf-2-4=3.2.6-4+b1 \
-    libfontconfig1=2.11.0-6.7+b1
+RUN apt-get  install -y xvfb x11vnc x11-xkb-utils xfonts-100dpi xfonts-75dpi xfonts-scalable xfonts-cyrillic x11-apps libglib2.0-0 \
+    libnss3\
+    libgconf-2-4 \
+    libfontconfig1
 
 ADD ./xvfb-chromium /usr/bin/xvfb-chromium
 
 ENV DISPLAY :99
 ENV CHROME_BIN /usr/bin/google-chrome
-
 
 COPY ./graph_server/ /graph_server/
 COPY ./selenium_wrc/ /selenium_wrc/
@@ -63,12 +62,7 @@ WORKDIR /app
 # Install app dependencies
 RUN pip install -r requirements.txt
 
-
-ENV CHROMEDRIVER_VERSION 2.36
-ENV CHROMEDRIVER_SHA256 2461384f541346bb882c997886f8976edc5a2e7559247c8642f599acd74c21d4
-
-RUN curl -SLO "https://chromedriver.storage.googleapis.com/$CHROMEDRIVER_VERSION/chromedriver_linux64.zip" \
-  && echo "$CHROMEDRIVER_SHA256  chromedriver_linux64.zip" | sha256sum -c - \
+RUN curl -SLO "https://chromedriver.storage.googleapis.com/$(curl https://chromedriver.storage.googleapis.com/LATEST_RELEASE)/chromedriver_linux64.zip" \
   && unzip "chromedriver_linux64.zip" -d /usr/local/bin \
   && rm "chromedriver_linux64.zip"
 

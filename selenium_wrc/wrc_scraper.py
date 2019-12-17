@@ -58,7 +58,8 @@ class WRCScraper:
         elif platform.system() == 'Windows':
             self.chromedriver_path = os.path.join(self.webdriver_dir, WINDOWS_CHROMEDRIVER)
         elif platform.system() == "Linux":
-            self.chromedriver_path = os.path.join(self.webdriver_dir, LINUX_CHROMEDRIVER)
+            self.chromedriver_path = 'usr/local/bin/chromedriver'
+            #self.chromedriver_path = os.path.join(self.webdriver_dir, LINUX_CHROMEDRIVER)
         self.download_directory = os.path.join(WRCScraper.data_dir, "tmp",
                                                "{}-{}".format(self.start_date, self.end_date))
         self.initialize_directories()
