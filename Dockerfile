@@ -53,7 +53,8 @@ ENV CHROME_BIN /usr/bin/google-chrome
 COPY ./graph_server/ /graph_server/
 COPY ./selenium_wrc/ /selenium_wrc/
 COPY ./requirements.txt /app
-COPY ./web_driver /web_driver/
+COPY ./data/ /data/
+#COPY ./web_driver /web_driver/
 #RUN mkdir /data
 
 WORKDIR /app
